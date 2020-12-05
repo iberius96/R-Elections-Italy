@@ -126,8 +126,8 @@ scrutini_reg <- scrutini_reg %>%
     Ente = str_to_upper(Ente), Ente = case_when(
       Ente == "ABRUZZI" ~ "ABRUZZO",
       Ente == "TRENTINO-ALTO ADIGE/SUDTIROL" ~ "TRENTINO ALTO ADIGE",
+      Ente == "TRENTINO-ALTO ADIGE" ~ "TRENTINO ALTO ADIGE",
       Ente == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
-      Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
       Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
       TRUE ~ Ente
     )
@@ -150,8 +150,8 @@ liste_reg <- liste_reg %>%
     Ente = str_to_upper(Ente), Ente = case_when(
       Ente == "ABRUZZI" ~ "ABRUZZO",
       Ente == "TRENTINO-ALTO ADIGE/SUDTIROL" ~ "TRENTINO ALTO ADIGE",
+      Ente == "TRENTINO-ALTO ADIGE" ~ "TRENTINO ALTO ADIGE",
       Ente == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
-      Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
       Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
       TRUE ~ Ente
     )
