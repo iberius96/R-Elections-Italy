@@ -24,52 +24,44 @@ library(dplyr)
 scrutini_senato_it <- read.csv(
   "./source/elections/italy/SCRUTINI-Senato.csv", 
   header = TRUE, 
-  sep = ";", 
-  strip.white=TRUE
+  sep = ";"
 )
 scrutini_camera_it <- read.csv(
   "./source/elections/italy/SCRUTINI-Camera.csv", 
   header = TRUE, 
-  sep = ";", 
-  strip.white=TRUE
+  sep = ";"
 )
 liste_senato_it <- read.csv(
   "./source/elections/italy/LISTE-Senato.csv",
   header = TRUE, 
-  sep = ";", 
-  strip.white=TRUE
+  sep = ";"
 )
 liste_camera_it <- read.csv(
   "./source/elections/italy/LISTE-Camera.csv", 
   header = TRUE, 
-  sep = ";",
-  strip.white=TRUE
+  sep = ";"
 )
 
 #Data with region granularity (No votes coming from outside of Italy)
 scrutini_senato_reg <- read.csv(
   "./source/elections/regions/SCRUTINI-Senato-Reg.csv", 
   header = TRUE, 
-  sep = ";",
-  strip.white=TRUE
+  sep = ";"
 )
 scrutini_camera_reg <- read.csv(
   "./source/elections/regions/SCRUTINI-Camera-Reg.csv",
   header = TRUE, 
-  sep = ";",
-  strip.white=TRUE
+  sep = ";"
 )
 liste_senato_reg <- read.csv(
   "./source/elections/regions/LISTE-Senato-Reg.csv", 
   header = TRUE, 
-  sep = ";",
-  strip.white=TRUE
+  sep = ";"
 )
 liste_camera_reg <- read.csv(
   "./source/elections/regions/LISTE-Camera-Reg.csv", 
   header = TRUE, 
-  sep = ";",
-  strip.white=TRUE
+  sep = ";"
 )
 
 #Adding id column
@@ -117,23 +109,53 @@ liste_it <- liste_it %>%
   summarise_all(sum)
 
 #We want to "standardize" region names and group them
+scrutini_reg$Ente <- trimws(
+    scrutini_reg$Ente, 
+    which = "r"
+  ) 
+scrutini_reg$Ente <- sub(
+    "\\s\\d+$", 
+    "", 
+    scrutini_reg$Ente
+  )
+
 scrutini_reg <- scrutini_reg %>%
   group_by(Ente, Year, House) %>%
   summarise_all(sum) %>%
   mutate(
     Ente = str_to_upper(Ente), Ente = case_when(
       Ente == "ABRUZZI" ~ "ABRUZZO",
-      Ente == "ABRUZZI " ~ "ABRUZZO",
       Ente == "TRENTINO-ALTO ADIGE/SUDTIROL" ~ "TRENTINO ALTO ADIGE",
       Ente == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
+      Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
       Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
       TRUE ~ Ente
     )
   )
 
+liste_reg$Ente <- trimws(
+    liste_reg$Ente, 
+    which = "r"
+  ) 
+liste_reg$Ente <- sub(
+    "\\s\\d+$", 
+    "", 
+    liste_reg$Ente
+  )
+
 liste_reg <- liste_reg %>%
   group_by(Ente, Year, House, Liste.Gruppi) %>%
-  summarise_all(sum)
+  summarise_all(sum) %>%
+  mutate(
+    Ente = str_to_upper(Ente), Ente = case_when(
+      Ente == "ABRUZZI" ~ "ABRUZZO",
+      Ente == "TRENTINO-ALTO ADIGE/SUDTIROL" ~ "TRENTINO ALTO ADIGE",
+      Ente == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
+      Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
+      Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
+      TRUE ~ Ente
+    )
+  )
 
 scrutini_reg
 liste_reg
