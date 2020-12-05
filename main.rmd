@@ -7,5 +7,150 @@ output:
 
 ```{r}
 library(tidyverse)
-library(sf)
+library(ggplot2)
+library(dplyr)
 ```
+
+##Importing and cleaning political data
+
+```{r}
+#In order to reduce the number of .csv files associated with the project, some operation have been performed on the data sets outside of RStudio. 
+#The .csv files on the Government website are separated by House (Camera/Senato), by type (Scrutini/Lista) and by election year. In order to reduce the total number of election related files in the project, a new "Year" column has been added to the original data sets. After that the division by election year has been removed by merging the separate files.
+#The "candidate" column was also removed when present (since it was only there in an handful of election years)
+
+#scrutini_camera_it, "Valle d'aosta" contains an NA value for "Schede.non.valide" in 2013, for now we are going to count that value as zero
+
+#National data (no region granularity)
+scrutini_senato_it <- read.csv(
+  "./source/elections/italy/SCRUTINI-Senato.csv", 
+  header = TRUE, 
+  sep = ";", 
+  strip.white=TRUE
+)
+scrutini_camera_it <- read.csv(
+  "./source/elections/italy/SCRUTINI-Camera.csv", 
+  header = TRUE, 
+  sep = ";", 
+  strip.white=TRUE
+)
+liste_senato_it <- read.csv(
+  "./source/elections/italy/LISTE-Senato.csv",
+  header = TRUE, 
+  sep = ";", 
+  strip.white=TRUE
+)
+liste_camera_it <- read.csv(
+  "./source/elections/italy/LISTE-Camera.csv", 
+  header = TRUE, 
+  sep = ";",
+  strip.white=TRUE
+)
+
+#Data with region granularity (No votes coming from outside of Italy)
+scrutini_senato_reg <- read.csv(
+  "./source/elections/regions/SCRUTINI-Senato-Reg.csv", 
+  header = TRUE, 
+  sep = ";",
+  strip.white=TRUE
+)
+scrutini_camera_reg <- read.csv(
+  "./source/elections/regions/SCRUTINI-Camera-Reg.csv",
+  header = TRUE, 
+  sep = ";",
+  strip.white=TRUE
+)
+liste_senato_reg <- read.csv(
+  "./source/elections/regions/LISTE-Senato-Reg.csv", 
+  header = TRUE, 
+  sep = ";",
+  strip.white=TRUE
+)
+liste_camera_reg <- read.csv(
+  "./source/elections/regions/LISTE-Camera-Reg.csv", 
+  header = TRUE, 
+  sep = ";",
+  strip.white=TRUE
+)
+
+#Adding id column
+scrutini_senato_it <- scrutini_senato_it %>% add_column(House = "Senato")
+scrutini_camera_it <- scrutini_camera_it %>% add_column(House = "Camera")
+liste_senato_it <- liste_senato_it %>% add_column(House = "Senato")
+liste_camera_it <- liste_camera_it %>% add_column(House = "Camera")
+
+scrutini_senato_reg <- scrutini_senato_reg %>% add_column(House = "Senato")
+scrutini_camera_reg <- scrutini_camera_reg %>% add_column(House = "Camera")
+liste_senato_reg <- liste_senato_reg %>% add_column(House = "Senato")
+liste_camera_reg <- liste_camera_reg %>% add_column(House = "Camera")
+
+#Joining 
+scrutini_it <- full_join(
+  scrutini_senato_it,
+  scrutini_camera_it
+)
+
+liste_it <- full_join(
+  liste_senato_it,
+  liste_camera_it
+)
+
+scrutini_reg <- full_join(
+  scrutini_senato_reg,
+  scrutini_camera_reg
+)
+
+liste_reg <- full_join(
+  liste_senato_reg,
+  liste_camera_reg
+)
+
+#We can group all lines that have the same year, house (and party for lists)
+#We don't care if votes come from within our outside the country. 
+scrutini_it <- scrutini_it %>%
+  select(-Ente) %>%
+  group_by(Year, House) %>%
+  summarise_all(sum)
+
+liste_it <- liste_it %>%
+  select(-Ente) %>%
+  group_by(Year, House, Liste.Gruppi) %>%
+  summarise_all(sum)
+
+#We want to "standardize" region names and group them
+scrutini_reg <- scrutini_reg %>%
+  group_by(Ente, Year, House) %>%
+  summarise_all(sum) %>%
+  mutate(
+    Ente = str_to_upper(Ente), Ente = case_when(
+      Ente == "ABRUZZI" ~ "ABRUZZO",
+      Ente == "ABRUZZI " ~ "ABRUZZO",
+      Ente == "TRENTINO-ALTO ADIGE/SUDTIROL" ~ "TRENTINO ALTO ADIGE",
+      Ente == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
+      Ente == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
+      TRUE ~ Ente
+    )
+  )
+
+liste_reg <- liste_reg %>%
+  group_by(Ente, Year, House, Liste.Gruppi) %>%
+  summarise_all(sum)
+
+scrutini_reg
+liste_reg
+```
+
+##Importing and cleaning labour market data
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
