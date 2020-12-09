@@ -9,6 +9,8 @@ output:
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
+
+`%notin%` <- Negate(`%in%`)
 ```
 
 ## Notes on translations
@@ -220,11 +222,84 @@ list_reg_top
 
 ## Importing and cleaning labour market data
 
-```{r}
+First year with employment rate data (total + zone): 1973
+First year with region granularity: 1993
 
+We will start by importing data related to the employment rate in Italy.
+
+```{r}
+empl_rate_raw <- read.csv(
+  "./source/labour/employment-rate.csv", 
+  header = TRUE, 
+  sep = ","
+)
+
+head(empl_rate_raw)
+```
+
+In the raw dataset we have many columns that have id codes that are spelled out in other columns
+
+ID COLUMN       FULL NAME COLUMN
+ITTER107        Territorio
+TIPO_DATO_FOL   Tipo.dato
+SEXISTAT1       Sesso
+ETA1            Classe.di.eta
+TITOLO_STUDIO   Titolo.di.studio
+TIME            Seleziona.periodo 
+
+We can drop all columns containing ids.
+Using the unique() we can also notice that the columns "Tipo.data", "Flag.Codes" and "Flags" do not provide any useful data.
+
+```{r}
+# Drop
+empl_rate <- empl_rate_raw %>%
+  subset(select = -c(ITTER107, TIPO_DATO_FOL, SEXISTAT1, ETA1, TITOLO_STUDIO, TIME, Tipo.dato, Flag.Codes, Flags))
+
+# Translate
+colnames(empl_rate) <- c("Region", "Sex", "Age", "Education.level", "Year", "Value")
+```
+
+At this point, the dataset still contains an higher level of granularity than needed. 
+
+Since we are not looking for a division based on the level of education, we want to keep only the rows where the education level has value total (totale), then we can drop the "Education.level" column.
+
+We can do the same thing for the age column. In this case we will keep the rows that have age range 15-64, which is the widest possible range for people in their working years.
+We could keep the 15+ range instead, but this would significantly lower the employment values since it also considers the senile population.
+
+Totals values can also be kept for the sex related column.
+
+The year columns also contains quarterly values for each year. We can drop the quarterly rows and keep only the aggregate data for each year.
+
+We also need to drop some values from the Region column. In this regard we want to keep only the national values and the regional values (hence dropping the ones related to macro-regions).
+
+Finally, we will provide a translation for the content of the Sex column.
+
+```{r}
+macro_regions <- c("Nord", "Nord-ovest", "Nord-est", "Centro", "Mezzogiorno")
+
+#All quarterly values for the year column contain letters. We filter them out by trying to convert to integer and then checking if the resul is Na
+empl_rate <- empl_rate %>%
+  filter(
+      Education.level == "totale" &
+      Sex == "totale" &
+      Age == "15-64 anni" &
+      !is.na(as.numeric(Year)) &
+      Region %notin% macro_regions
+  ) %>%
+  subset(select = -c(Education.level, Sex, Age))
 ```
 
 
+Now, we can split this large dataset into a national and a regional one.
+
+```{r}
+empl_rate_it <- empl_rate %>%
+  filter(Region == 'Italia') %>%
+  subset(select = -Region)
+
+empl_rate_reg <- empl_rate %>%
+  filter(Region != 'Italia')
+```
 
 
 
