@@ -367,16 +367,18 @@ ui <- fluidPage(
   leafletOutput('map')
 )
 
+#input$year_sel
+
 server <- function(input, output, session) {
   # Filtering
   italy <- reactive({
     italy <- italy %>% 
-      filter(Year == input$year_sel, House == 'Chamber')
+      filter(Year == 2018, House == 'Chamber')
   })
   
   ballot_it_filtered <- reactive({
     ballot_it_filtered <- ballot_it %>%
-    filter(Year == input$year_sel, House == 'Chamber')
+    filter(Year == 2018, House == 'Chamber')
   })
   
     # Label for bottom-right persistent legend
@@ -406,33 +408,62 @@ server <- function(input, output, session) {
   })
   
   output$map <- renderLeaflet({
-    leaflet(italy) %>%
+    leaflet() %>%
     addPolygons(
+      data = italy(),
       stroke = TRUE,
       color = 'Grey',
       weight = 1.5,
-      label = reg_labels,
-      fillColor = colorNumeric(palette = 'YlOrRd',domain = italy$Voter.turnout)
-    ) %>%
-    addLegend(pal = pal,
-              values = italy$Voter.turnout,
-              opacity = 0.7,
-              title = 'Voter Turnout',
-              position = 'bottomright') 
+      label = reg_labels
+    )
   })
 }
 
 shinyApp(ui, server)
 ```
 ```{r}
+# Filtering
+italy <- italy %>% 
+  filter(Year == 2018, House == 'Chamber')
+
+ballot_it_filtered <- ballot_it %>%
+filter(Year == 2018, House == 'Chamber')
+
+# Label for bottom-right persistent legend
+it_labels <- paste(
+  'Voter turnout: ', 
+  ballot_it_filtered$Voter.turnout, 
+  '<br/>',
+  'Parties: ', 
+  aggregate_list_it$Party
+) %>%
+  lapply(htmltools::HTML)
+
+# Label for individual regions
+reg_labels <- paste(
+  '<strong>Region: ', italy$Region, '</strong><br/>',
+  'Voter turnout: ', italy$Voter.turnout, '<br/>',
+  'Parties: ', italy$Party
+) %>%
+  lapply(htmltools::HTML)
+
+
+pal <- colorNumeric(palette = 'YlOrRd',domain = italy$Voter.turnout)
+
 leaflet(italy) %>%
-  addPolygons(
-      stroke = TRUE,
-      color = 'Grey',
-      weight = 1.5,
-      label = reg_labels,
-      fillColor = colorNumeric(palette = 'YlOrRd',domain = italy$Voter.turnout)
-    )
+addPolygons(
+  stroke = TRUE,
+  color = 'Grey',
+  weight = 1.5,
+  label = reg_labels,
+  fillColor = ~pal(italy$Voter.turnout)
+) %>%
+addLegend(pal = pal,
+          values = italy$Voter.turnout,
+          opacity = 0.7,
+          title = 'Voter Turnout',
+          position = 'bottomright') 
+
 ```
 
 
