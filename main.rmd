@@ -1,6 +1,7 @@
 ---
 title: 'R Project Samuele Ceol'
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -9,6 +10,10 @@ output:
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
+library(rnaturalearth)
+library(rgeos)
+library(leaflet)
+library(shiny)
 
 `%notin%` <- Negate(`%in%`)
 ```
@@ -141,7 +146,7 @@ ballot_it <- ballot_it %>%
   subset(select = -c(Region, Empty.votes, Null.votes)) %>%
   group_by(Year, House) %>%
   summarise_all(sum) %>%
-  mutate(Voter.turnout = format(round((Voters / Constituents) * 100, 1), nsmall = 1))
+  mutate(Voter.turnout = as.numeric(format(round((Voters / Constituents) * 100, 1), nsmall = 1)))
 
 list_it <- list_it %>%
   subset(select = -Region) %>%
@@ -167,7 +172,7 @@ ballot_reg <- ballot_reg %>%
   subset(select = -c(Empty.votes, Null.votes)) %>%
   group_by(Region, Year, House) %>%
   summarise_all(sum) %>%
-  mutate(Voter.turnout = format(round((Voters / Constituents) * 100, 1), nsmall = 1)) %>%
+  mutate(Voter.turnout = as.numeric(format(round((Voters / Constituents) * 100, 1), nsmall = 1))) %>%
   mutate(
     Region = str_to_upper(Region), Region = case_when(
       Region == "ABRUZZI" ~ "ABRUZZO",
@@ -175,6 +180,8 @@ ballot_reg <- ballot_reg %>%
       Region == "TRENTINO-ALTO ADIGE" ~ "TRENTINO ALTO ADIGE",
       Region == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
       Region == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
+      Region == "VALLE D'AOSTA -" ~ "VALLE D'AOSTA",
+      Region == "VALLE D'AOSTA-" ~ "VALLE D'AOSTA",
       TRUE ~ Region
     )
   )
@@ -199,9 +206,14 @@ list_reg <- list_reg %>%
       Region == "TRENTINO-ALTO ADIGE" ~ "TRENTINO ALTO ADIGE",
       Region == "FRIULI VENEZIA GIULIA" ~ "FRIULI-VENEZIA GIULIA",
       Region == "EMILIA-ROMAGNA" ~ "EMILIA ROMAGNA",
+      Region == "VALLE D'AOSTA -" ~ "VALLE D'AOSTA",
+      Region == "VALLE D'AOSTA-" ~ "VALLE D'AOSTA",
       TRUE ~ Region
     )
   )
+
+ballot_reg
+ballot_it
 ```
 For both national and regional lists we want to only keep a set percentile of top voted parties for each year.
 
@@ -214,9 +226,7 @@ list_reg_top <- list_reg %>%
   group_by(Region, Year, House) %>% 
   filter(quantile(Votes, 0.7)<Votes)
 
-ballot_it
 list_it_top
-ballot_reg
 list_reg_top
 ```
 
@@ -299,11 +309,131 @@ empl_rate_it <- empl_rate %>%
 
 empl_rate_reg <- empl_rate %>%
   filter(Region != 'Italia')
+
+empl_rate_reg
+```
+
+## Visualizing election data
+
+```{r}
+# TODO - Abruzzi e Molise
+italy <- ne_states(country="Italy", returnclass="sf") %>%
+  rename(Region = region) %>%
+  group_by(Region) %>% 
+  summarise() %>%
+  mutate(
+    Region = str_to_upper(Region),
+    Region = case_when(
+      Region == 'APULIA' ~ 'PUGLIA',
+      Region == 'SICILY' ~ 'SICILIA',
+      Region == 'TRENTINO-ALTO ADIGE' ~ 'TRENTINO ALTO ADIGE',
+      Region == 'EMILIA-ROMAGNA' ~ 'EMILIA ROMAGNA',
+      TRUE ~ Region
+    )
+  )
+```
+
+```{r}
+# Building aggregate lists
+aggregate_list_it <- list_it_top %>%
+  group_by(Year, House) %>%
+  arrange(-Votes) %>% 
+  mutate(Party = paste(Party, Votes, sep = ':', collapse = '<br/>')) %>%
+  subset(select = -c(Votes)) %>%
+  distinct(Year, House, Party)
+
+aggregate_list_reg <- list_reg_top %>%
+  group_by(Year, Region, House) %>%
+  arrange(-Votes) %>%
+  mutate(Party = paste(Party, Votes, sep = ':', collapse = '<br/>')) %>%
+  subset(select = -c(Votes)) %>%
+  distinct(Region, Year, House, Party)
+
+# Contains geom data + regional data for both lists and ballots
+italy <- italy %>%
+  inner_join(ballot_reg, by='Region') %>%
+  inner_join(aggregate_list_reg, by=c('Region', 'Year', 'House'))
 ```
 
 
+```{r}
+# TODO - Change hard coded min max values
+ui <- fluidPage(
+  selectInput(
+    inputId =  'year_sel', 
+    label = "Select year:", 
+    choices = 1948:2008
+  ),
+  leafletOutput('map')
+)
 
+server <- function(input, output, session) {
+  # Filtering
+  italy <- reactive({
+    italy <- italy %>% 
+      filter(Year == input$year_sel, House == 'Chamber')
+  })
+  
+  ballot_it_filtered <- reactive({
+    ballot_it_filtered <- ballot_it %>%
+    filter(Year == input$year_sel, House == 'Chamber')
+  })
+  
+    # Label for bottom-right persistent legend
+  it_labels <- reactive({
+    it_labels <- paste(
+      'Voter turnout: ', 
+      ballot_it_filtered$Voter.turnout, 
+      '<br/>',
+      'Parties: ', 
+      aggregate_list_it$Party
+    ) %>%
+      lapply(htmltools::HTML)
+  })
+  
+  # Label for individual regions
+  reg_labels <- reactive({
+    reg_labels <- paste(
+      '<strong>Region: ', italy$Region, '</strong><br/>',
+      'Voter turnout: ', italy$Voter.turnout, '<br/>',
+      'Parties: ', italy$Party
+    ) %>%
+      lapply(htmltools::HTML)
+  })
+  
+  pal <- reactive({
+    pal <- colorNumeric(palette = 'YlOrRd',domain = italy$Voter.turnout)
+  })
+  
+  output$map <- renderLeaflet({
+    leaflet(italy) %>%
+    addPolygons(
+      stroke = TRUE,
+      color = 'Grey',
+      weight = 1.5,
+      label = reg_labels,
+      fillColor = colorNumeric(palette = 'YlOrRd',domain = italy$Voter.turnout)
+    ) %>%
+    addLegend(pal = pal,
+              values = italy$Voter.turnout,
+              opacity = 0.7,
+              title = 'Voter Turnout',
+              position = 'bottomright') 
+  })
+}
 
+shinyApp(ui, server)
+```
+```{r}
+leaflet(italy) %>%
+  addPolygons(
+      stroke = TRUE,
+      color = 'Grey',
+      weight = 1.5,
+      label = reg_labels,
+      fillColor = colorNumeric(palette = 'YlOrRd',domain = italy$Voter.turnout)
+    )
+```
 
 
 
