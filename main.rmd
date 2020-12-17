@@ -14,6 +14,9 @@ library(rnaturalearth)
 library(rgeos)
 library(leaflet)
 library(shiny)
+library(sf)
+
+library(shinydashboard)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -31,7 +34,7 @@ Lista (elettorale)          (Electoral) list
 Elettore                    Constituent
 Votante                     Voter
 Camera (dei Deputati)       Chamber (of Deputies)   
-Senate (della Repubblica)   Senate (of the Republic)
+Senato (della Repubblica)   Senate (of the Republic)
 
 In the following sections, during the length of the whole project, only the English terms will be used. 
 The necessary steps will be taken in order to translate the Italian terms present in the used datasets to their English counterpart.
@@ -319,6 +322,7 @@ empl_rate_reg
 
 ```{r}
 # TODO - Abruzzi e Molise
+# Centroid latitude and longitude in order to find the circle marker center for leaflet
 italy <- ne_states(country="Italy", returnclass="sf") %>%
   rename(Region = region) %>%
   group_by(Region) %>% 
@@ -331,7 +335,9 @@ italy <- ne_states(country="Italy", returnclass="sf") %>%
       Region == 'TRENTINO-ALTO ADIGE' ~ 'TRENTINO ALTO ADIGE',
       Region == 'EMILIA-ROMAGNA' ~ 'EMILIA ROMAGNA',
       TRUE ~ Region
-    )
+    ),
+    centroid_lat = st_coordinates(st_centroid(geometry))[,1],
+    centroid_long = st_coordinates(st_centroid(geometry))[,2]
   )
 ```
 
@@ -355,7 +361,10 @@ aggregate_list_reg <- list_reg_top %>%
 italy <- italy %>%
   inner_join(ballot_reg, by='Region') %>%
   inner_join(aggregate_list_reg, by=c('Region', 'Year', 'House'))
+
+italy
 ```
+
 
 ```{r}
 # Filtering
@@ -402,6 +411,26 @@ addLegend(pal = pal,
           position = 'bottomright')
 
 ```
+
+```{r}
+leaflet(italy_filtered) %>%
+addCircleMarkers(
+  stroke = TRUE,
+  color = 'Grey',
+  weight = 1.5,
+  label = reg_labels,
+  italy_filtered$centroid_lat,
+  italy_filtered$centroid_long,
+  radius = sqrt(italy_filtered$Voters/10000),
+  fillColor = ~pal(italy_filtered$Voter.turnout)
+) %>%
+addLegend(pal = pal,
+          values = italy_filtered$Voter.turnout,
+          opacity = 0.7,
+          title = 'Voter Turnout',
+          position = 'bottomright')
+```
+
 ```{r}
 min(italy$Voter.turnout)
 max(italy$Voter.turnout)
@@ -419,13 +448,27 @@ ui <- fluidPage(
     label = "Select house:", 
     choices = c('Chamber', 'Senate')
   ),
-  leafletOutput('map')
+  selectInput(
+    inputId =  'shape_sel', 
+    label = "Select shape:", 
+    choices = c('Regions', 'Voters')
+  ),
+  leafletOutput('map'),
+  fluidRow(infoBoxOutput('nat_info'))
 )
 
 server <- function(input, output, session) {
   # Filtering
   italy_React <- reactive({
     italy %>% filter(Year == input$year_sel, House == input$house_sel)
+  })
+  
+  ballot_React <- reactive({
+    ballot_it %>% filter(Year == input$year_sel, House == input$house_sel)
+  })
+  
+  aggregate_list_React <- reactive({
+    aggregate_list_it %>% filter(Year == input$year_sel, House == input$house_sel)
   })
   
   pal <- reactive({
@@ -441,17 +484,48 @@ server <- function(input, output, session) {
     ) %>%
       lapply(htmltools::HTML)
   })
+  
+  output$nat_info <- renderInfoBox({
+    infoBox(
+      paste(
+        'Voter turnout: ', 
+        ballot_React()$Voter.turnout, 
+        '<br/>',
+        'Parties: ', 
+        aggregate_list_React()$Party
+      ) %>%
+        lapply(htmltools::HTML)
+    )
+  })
+  
+  map_data <- reactive({
+    if(input$shape_sel == 'Regions') {
+      m <- leaflet(italy_React()) %>%
+      addPolygons(
+          stroke = TRUE,
+          color = 'Grey',
+          weight = 1.5,
+          label = reg_labels(),
+          fillColor = ~pal()(italy_React()$Voter.turnout),
+          highlightOptions = highlightOptions(color = "grey", weight = 3, bringToFront = TRUE))
+    }
+    else if(input$shape_sel == 'Voters') {
+      m <- leaflet(italy_React()) %>%
+      addCircleMarkers(
+            stroke = TRUE,
+            color = 'Grey',
+            weight = 1.5,
+            label = reg_labels(),
+            italy_React()$centroid_lat,
+            italy_React()$centroid_long,
+            radius = sqrt(italy_React()$Voters/10000),
+            fillColor = ~pal()(italy_React()$Voter.turnout)
+          )
+    }
+  })
 
   output$map <- renderLeaflet({
-    leaflet() %>%
-    addPolygons(
-      data = italy_React(),
-      stroke = TRUE,
-      color = 'Grey',
-      weight = 1.5,
-      label = reg_labels(),
-      fillColor = ~pal()(italy_React()$Voter.turnout),
-      highlightOptions = highlightOptions(color = "grey", weight = 3, bringToFront = TRUE)) %>%
+    map_data() %>%
     addLegend(
         pal = pal(),  
         values = italy_React()$Voter.turnout,
@@ -462,6 +536,32 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+```
+
+```{r}
+# Voter turnout trend
+ballot_it
+
+ggplot(ballot_it, aes(x = Year, y = Voter.turnout)) + 
+  geom_line(aes(color = House)) + 
+  geom_point(aes(color = House)) +  
+  expand_limits(y=c(50, 100)) +
+  facet_grid(vars(House))
+  
+```
+
+```{r}
+# Diversity - Overall parties voted each year
+list_it_grouped <- list_it %>%
+  group_by(Year, House) %>%
+  summarise(Party = n_distinct(Party))
+
+ggplot(
+  list_it_grouped,aes(x=Year, y=Party)) +
+geom_col(aes(fill=House)) +
+facet_grid(vars(House))
+
+# How focused (%) the votes
 ```
 
 
