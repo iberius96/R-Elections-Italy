@@ -451,7 +451,7 @@ ui <- fluidPage(
   selectInput(
     inputId =  'shape_sel', 
     label = "Select shape:", 
-    choices = c('Regions', 'Voters')
+    choices = c('Regions', 'Voters', 'Both')
   ),
   leafletOutput('map'),
   fluidRow(infoBoxOutput('nat_info'))
@@ -521,6 +521,22 @@ server <- function(input, output, session) {
             radius = sqrt(italy_React()$Voters/10000),
             fillColor = ~pal()(italy_React()$Voter.turnout)
           )
+    }
+    else{
+      m <- leaflet(italy_React()) %>%
+      addPolygons(
+          stroke = TRUE,
+          color = 'Grey',
+          weight = 1.5) %>%
+      addCircleMarkers(
+            stroke = TRUE,
+            color = 'Grey',
+            weight = 1.5,
+            label = reg_labels(),
+            italy_React()$centroid_lat,
+            italy_React()$centroid_long,
+            radius = sqrt(italy_React()$Voters/10000),
+            fillColor = ~pal()(italy_React()$Voter.turnout))
     }
   })
 
