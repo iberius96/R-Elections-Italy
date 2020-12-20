@@ -9,14 +9,16 @@ output:
 ```{r}
 library(tidyverse)
 library(ggplot2)
+library(ggridges)
 library(dplyr)
 library(rnaturalearth)
 library(rgeos)
 library(leaflet)
 library(shiny)
 library(sf)
-
+library(viridis) 
 library(shinydashboard)
+library(ggrepel)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -35,6 +37,7 @@ Elettore                    Constituent
 Votante                     Voter
 Camera (dei Deputati)       Chamber (of Deputies)   
 Senato (della Repubblica)   Senate (of the Republic)
+Trasversalismo              Syncretic (politics)
 
 In the following sections, during the length of the whole project, only the English terms will be used. 
 The necessary steps will be taken in order to translate the Italian terms present in the used datasets to their English counterpart.
@@ -217,6 +220,19 @@ list_reg <- list_reg %>%
     )
   )
 
+
+# TODO - Improve this aberration
+#48 - 68 - Drop column since single regions have their own data
+#53 - 58 - 63 - Use data for both regions
+#Duplicating votes for 'Abruzzi e Molise' and moving them to the individual regions
+list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & list_reg$Year==1948),]
+list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & list_reg$Year==1968),]
+list_reg$Region[list_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
+
+ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & ballot_reg$Year==1948),]
+ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & ballot_reg$Year==1968),]
+ballot_reg$Region[ballot_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
+
 ballot_reg
 ballot_it
 ```
@@ -230,6 +246,24 @@ list_it_top <- list_it %>%
 list_reg_top <- list_reg %>% 
   group_by(Region, Year, House) %>% 
   filter(quantile(Votes, 0.7)<Votes)
+
+# To this top parties, we would also like to associate their poilitical collocation
+# (Far-Left,Left,Centre-Left,Centre,Centre-Right,Syncretic,Right,Far-Right)
+party_collocation <- read.csv(
+  "./source/elections/party-collocation.csv", 
+  header = TRUE, 
+  sep = ";"
+)
+
+list_it_top <- left_join(
+  list_it_top,
+  party_collocation
+)
+
+list_reg_top <- left_join(
+  list_reg_top,
+  party_collocation
+)
 
 list_it_top
 list_reg_top
@@ -321,7 +355,6 @@ empl_rate_reg
 ## Visualizing election data
 
 ```{r}
-# TODO - Abruzzi e Molise
 # Centroid latitude and longitude in order to find the circle marker center for leaflet
 italy <- ne_states(country="Italy", returnclass="sf") %>%
   rename(Region = region) %>%
@@ -346,16 +379,22 @@ italy <- ne_states(country="Italy", returnclass="sf") %>%
 aggregate_list_it <- list_it_top %>%
   group_by(Year, House) %>%
   arrange(-Votes) %>% 
-  mutate(Party = paste(Party, Votes, sep = ':', collapse = '<br/>')) %>%
+  mutate(
+    Party = paste(Party, Votes, sep = ':', collapse = '<br/>'),
+    Collocation = first(Collocation)
+    ) %>%
   subset(select = -c(Votes)) %>%
-  distinct(Year, House, Party)
+  distinct(Year, House, Party, Collocation)
 
 aggregate_list_reg <- list_reg_top %>%
   group_by(Year, Region, House) %>%
   arrange(-Votes) %>%
-  mutate(Party = paste(Party, Votes, sep = ':', collapse = '<br/>')) %>%
+  mutate(
+    Party = paste(Party, Votes, sep = ':', collapse = '<br/>'),
+    Collocation = first(Collocation)
+    ) %>%
   subset(select = -c(Votes)) %>%
-  distinct(Region, Year, House, Party)
+  distinct(Region, Year, House, Party, Collocation)
 
 # Contains geom data + regional data for both lists and ballots
 italy <- italy %>%
@@ -411,6 +450,28 @@ addLegend(pal = pal,
           position = 'bottomright')
 
 ```
+```{r}
+palColl <-colorFactor(viridis(7), italy_filtered$collocation)
+
+collLabels <- unique(italy$Collocation)
+
+italy_filtered
+
+leaflet(italy_filtered) %>%
+addPolygons(
+  stroke = TRUE,
+  color = 'Grey',
+  weight = 1.5,
+  label = reg_labels,
+  fillColor = ~palColl(italy_filtered$Collocation),
+  highlightOptions = highlightOptions(color = "grey", weight = 3, bringToFront = TRUE)
+) %>%
+addLegend(pal = palColl,
+          values = collLabels,
+          opacity = 0.7,
+          title = 'Top party collocation',
+          position = 'bottomright')
+```
 
 ```{r}
 leaflet(italy_filtered) %>%
@@ -431,10 +492,7 @@ addLegend(pal = pal,
           position = 'bottomright')
 ```
 
-```{r}
-min(italy$Voter.turnout)
-max(italy$Voter.turnout)
-```
+In order to be able to dinammically change our map based on Year, House, Shape and Fill Color,  we can proceed to move everything we have written thus far into a shiny app.
 
 ```{r}
 ui <- fluidPage(
@@ -450,8 +508,13 @@ ui <- fluidPage(
   ),
   selectInput(
     inputId =  'shape_sel', 
-    label = "Select shape:", 
+    label = 'Select shape:', 
     choices = c('Regions', 'Voters', 'Both')
+  ),
+  selectInput(
+    inputId = 'fill_sel',
+    label = 'Select fill color:',
+    choices = c('Voter turnout', 'Top party collocation')
   ),
   leafletOutput('map'),
   fluidRow(infoBoxOutput('nat_info'))
@@ -472,9 +535,14 @@ server <- function(input, output, session) {
   })
   
   pal <- reactive({
-    colorNumeric(palette = 'YlOrRd',domain = italy_React()$Voter.turnout)
+    if(input$fill_sel == 'Voter turnout') {
+      colorNumeric(palette = 'YlOrRd',domain = italy_React()$Voter.turnout)
+    }
+    else if(input$fill_sel == 'Top party collocation') {
+      colorFactor(viridis(7), italy_React()$Collocation)
+    }
   })
-  
+    
   # Label for individual regions
   reg_labels <- reactive({
     reg_labels <- paste(
@@ -498,6 +566,16 @@ server <- function(input, output, session) {
     )
   })
   
+  fillCol <- reactive({
+    #Fill column
+    if(input$fill_sel == 'Voter turnout') {
+      italy_React()$Voter.turnout
+    }
+    else if(input$fill_sel == 'Top party collocation') {
+      italy_React()$Collocation
+    }
+  })
+  
   map_data <- reactive({
     if(input$shape_sel == 'Regions') {
       m <- leaflet(italy_React()) %>%
@@ -506,8 +584,8 @@ server <- function(input, output, session) {
           color = 'Grey',
           weight = 1.5,
           label = reg_labels(),
-          fillColor = ~pal()(italy_React()$Voter.turnout),
-          highlightOptions = highlightOptions(color = "grey", weight = 3, bringToFront = TRUE))
+          highlightOptions = highlightOptions(color = "grey", weight = 3, bringToFront = TRUE),
+          fillColor = ~pal()(fillCol()))
     }
     else if(input$shape_sel == 'Voters') {
       m <- leaflet(italy_React()) %>%
@@ -519,8 +597,7 @@ server <- function(input, output, session) {
             italy_React()$centroid_lat,
             italy_React()$centroid_long,
             radius = sqrt(italy_React()$Voters/10000),
-            fillColor = ~pal()(italy_React()$Voter.turnout)
-          )
+            fillColor = ~pal()(fillCol()))
     }
     else{
       m <- leaflet(italy_React()) %>%
@@ -536,7 +613,7 @@ server <- function(input, output, session) {
             italy_React()$centroid_lat,
             italy_React()$centroid_long,
             radius = sqrt(italy_React()$Voters/10000),
-            fillColor = ~pal()(italy_React()$Voter.turnout))
+            fillColor = ~pal()(fillCol()))
     }
   })
 
@@ -544,43 +621,112 @@ server <- function(input, output, session) {
     map_data() %>%
     addLegend(
         pal = pal(),  
-        values = italy_React()$Voter.turnout,
+        values = fillCol(),
         opacity = 0.7,
-        title = 'Voter Turnout',
         position = 'bottomright')
   })
 }
 
 shinyApp(ui, server)
 ```
+A very simple initial visualization for this type of data would be a general overview of the voter turnout, for both houses, throughout all the election years.
 
 ```{r}
 # Voter turnout trend
-ballot_it
-
-ggplot(ballot_it, aes(x = Year, y = Voter.turnout)) + 
-  geom_line(aes(color = House)) + 
-  geom_point(aes(color = House)) +  
+ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) + 
+  ggtitle("Voter turnout trend") +
+  geom_line() + 
+  geom_point() +  
   expand_limits(y=c(50, 100)) +
-  facet_grid(vars(House))
-  
+  scale_x_continuous(breaks=election_years) +
+  scale_color_brewer(palette = "Set2") +
+  ylab('Voter turnout') + 
+  facet_grid(vars(House)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
+  #geom_text_repel(aes(x=1948, label = 'Hello'))
+
 ```
+As we can see, the voter turnout has steadily dropped after 1976, going from more than 90% to less than 70% in the 2018 election.
+Knowing this fact, it may also be interesting to visually explore how the proportions have changed between constituents and voters and how much these two groups have grown (together with the Italian population) during the last 70 years (which is an information that we are not able to gather from this first line chart).
+In order to do this, we are going to plot a bar chart, for both Houses, with one c
 
 ```{r}
-# Diversity - Overall parties voted each year
+# Y = Votes, X = years, Bar = divided by consitutents/voters (%)
+ggplot(ballots_it) +
+  ggtitle("Voters/Constituents proportion") +
+  geom_hline(yintercept=mean(ballots_it$Voters), linetype='dotted')+
+  geom_col(aes(x=Year, y=Constituents, fill='Constituents'), colour='#000000') +
+  geom_col(aes(x=Year, y=Voters, fill='Voters'), colour='#000000') +
+  scale_x_continuous(breaks=election_years) +
+  scale_y_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
+  scale_fill_brewer(palette = "Set2") +
+  facet_grid(vars(House)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```  
+As we can see, despite a much bigger pool of Constituents (caused, more than likely, by an increase in the overall population), the total number of voters 
+
+```{r}
+# Diversity - Total nr of parties voted each election
 list_it_grouped <- list_it %>%
   group_by(Year, House) %>%
   summarise(Party = n_distinct(Party))
 
-ggplot(
-  list_it_grouped,aes(x=Year, y=Party)) +
-geom_col(aes(fill=House)) +
-facet_grid(vars(House))
-
-# How focused (%) the votes
+ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
+  ggtitle("Total parties per election year") +
+  geom_col(colour='#000000') +
+  scale_x_continuous(breaks=election_years) +
+  scale_fill_brewer(palette = "Set2") +
+  ylab('Total nr. of parties') +
+  facet_grid(vars(House)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
+```{r}
+#Heatmap x=year, y=region, fill=collocation
+ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
+  ggtitle("Top party political collocation") +
+  geom_tile(colour='#000000') +
+  scale_x_continuous(breaks=election_years) +
+  scale_fill_brewer(palette = "Set2") +
+  facet_grid(vars(House)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
+```
+This heatmap allows us to see the radical shift that 
+Another interesting thing we can do with our data is calculating the percentage of voters belonging to/sharing a given political collocation (this will be an estimation over the total population since we only have Collocation information for top voted parties).
+In order to to this, we will group together (for each Year and House) all the rows with parties belonging to the same political collocation and we will add a new Percent column that will indicate the percentage of votes that the given collocation has received in the specific election year.
+This additional data will allow us to further explore the change in political view of the Italian population that was introduced in the previous plot. 
 
+```{r}
+#x=year, y=% of votes among the top parties, fill=collocation
+list_coll_percent <- list_reg_top %>%
+  group_by(Year,House,Collocation) %>%
+  summarise(Votes = sum(Votes)) %>%
+  mutate(Percent = (Votes/sum(Votes)) * 100) 
+
+list_coll_percent
+```
+
+```{r}
+ggplot(list_coll_percent, aes(x=Year, y=Percent, color=Collocation)) + 
+  ggtitle("Collocation trends for top parties") +
+  geom_point() + 
+  scale_x_continuous(breaks=election_years) +
+  scale_color_brewer(palette = "Set2") +
+  ylab('% of votes') + 
+  facet_grid(vars(House)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1)
+    )
+
+#TODO - Next up
+#Group left and right -> line plot
+#Vertical mirror barchart left/right - far-left/far-right, centre-left/centre-right
+```
 
 
 
