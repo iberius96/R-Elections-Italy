@@ -19,6 +19,10 @@ library(sf)
 library(viridis) 
 library(shinydashboard)
 library(ggrepel)
+library(gganimate)
+library(gifski)
+library(plotly)
+library(tidyr)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -496,27 +500,34 @@ In order to be able to dinammically change our map based on Year, House, Shape a
 
 ```{r}
 ui <- fluidPage(
-  selectInput(
-    inputId =  'year_sel', 
-    label = "Select year:", 
-    choices = election_years
+  sidebarLayout(
+    sidebarPanel(
+      selectInput(
+        inputId =  'year_sel', 
+        label = "Select year:", 
+        choices = election_years
+      ),
+      selectInput(
+        inputId =  'house_sel', 
+        label = "Select house:", 
+        choices = c('Chamber', 'Senate')
+      ),
+      selectInput(
+        inputId =  'shape_sel', 
+        label = 'Select shape:', 
+        choices = c('Regions', 'Voters', 'Both')
+      ),
+      selectInput(
+        inputId = 'fill_sel',
+        label = 'Select fill color:',
+        choices = c('Voter turnout', 'Top party collocation')
+      )
+    ),
+    
+    mainPanel(
+      leafletOutput('map')
+    )
   ),
-  selectInput(
-    inputId =  'house_sel', 
-    label = "Select house:", 
-    choices = c('Chamber', 'Senate')
-  ),
-  selectInput(
-    inputId =  'shape_sel', 
-    label = 'Select shape:', 
-    choices = c('Regions', 'Voters', 'Both')
-  ),
-  selectInput(
-    inputId = 'fill_sel',
-    label = 'Select fill color:',
-    choices = c('Voter turnout', 'Top party collocation')
-  ),
-  leafletOutput('map'),
   fluidRow(infoBoxOutput('nat_info'))
 )
 
@@ -634,7 +645,7 @@ A very simple initial visualization for this type of data would be a general ove
 ```{r}
 # Voter turnout trend
 ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) + 
-  ggtitle("Voter turnout trend") +
+  ggtitle("Voter turnout") +
   geom_line() + 
   geom_point() +  
   expand_limits(y=c(50, 100)) +
@@ -649,7 +660,7 @@ ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) +
 ```
 As we can see, the voter turnout has steadily dropped after 1976, going from more than 90% to less than 70% in the 2018 election.
 Knowing this fact, it may also be interesting to visually explore how the proportions have changed between constituents and voters and how much these two groups have grown (together with the Italian population) during the last 70 years (which is an information that we are not able to gather from this first line chart).
-In order to do this, we are going to plot a bar chart, for both Houses, with one c
+In order to do this, we are going to plot a bar chart, for both Houses, with the Voters bar overlayed on top of the Constituents one (since the Voters pool will always be smaller than the Constituents one).
 
 ```{r}
 # Y = Votes, X = years, Bar = divided by consitutents/voters (%)
@@ -665,7 +676,10 @@ ggplot(ballots_it) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```  
-As we can see, despite a much bigger pool of Constituents (caused, more than likely, by an increase in the overall population), the total number of voters 
+As we can see, despite a much bigger pool of Constituents (caused, more than likely, by an increase in the overall population), the total number of voters ...
+
+After these initial views on some basic data related to the election years for both Houses, we can start to take a closer look at the parties that were part of said elections.
+We will start by plotting the total nr. of parties that were present for each election year (at the national level).
 
 ```{r}
 # Diversity - Total nr of parties voted each election
@@ -674,11 +688,11 @@ list_it_grouped <- list_it %>%
   summarise(Party = n_distinct(Party))
 
 ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
-  ggtitle("Total parties per election year") +
+  ggtitle("Total nr. of parties per election year") +
   geom_col(colour='#000000') +
   scale_x_continuous(breaks=election_years) +
   scale_fill_brewer(palette = "Set2") +
-  ylab('Total nr. of parties') +
+  ylab('Nr. of parties') +
   facet_grid(vars(House)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1))
@@ -687,7 +701,7 @@ ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
 ```{r}
 #Heatmap x=year, y=region, fill=collocation
 ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
-  ggtitle("Top party political collocation") +
+  ggtitle("Political collocation of top voted parties") +
   geom_tile(colour='#000000') +
   scale_x_continuous(breaks=election_years) +
   scale_fill_brewer(palette = "Set2") +
@@ -695,8 +709,8 @@ ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
 ```
-This heatmap allows us to see the radical shift that 
-Another interesting thing we can do with our data is calculating the percentage of voters belonging to/sharing a given political collocation (this will be an estimation over the total population since we only have Collocation information for top voted parties).
+This heatmap allows us to see the radical shift that ...
+Another interesting thing we can do with our data is calculating the percentage of parties belonging to/sharing a given political collocation (this will be an estimation over the total since we only have Collocation information for top voted parties).
 In order to to this, we will group together (for each Year and House) all the rows with parties belonging to the same political collocation and we will add a new Percent column that will indicate the percentage of votes that the given collocation has received in the specific election year.
 This additional data will allow us to further explore the change in political view of the Italian population that was introduced in the previous plot. 
 
@@ -705,27 +719,92 @@ This additional data will allow us to further explore the change in political vi
 list_coll_percent <- list_reg_top %>%
   group_by(Year,House,Collocation) %>%
   summarise(Votes = sum(Votes)) %>%
-  mutate(Percent = (Votes/sum(Votes)) * 100) 
+  mutate(Percent = (Votes/sum(Votes)) * 100)  %>%
+  arrange(Year, House, Collocation)
 
 list_coll_percent
 ```
 
+Firstly, we will create an animated lineplot to visually show how 
+
+In order to avoid excessive clutter, we are going to group together all collocations belonging to the same spectrum (e.g. Far-Left, Left and Centre-Left will be grouped together into Left).
+Syncretic rows kept only for 2013 and 2018 to account for the rise of M5S.
+
+
 ```{r}
-ggplot(list_coll_percent, aes(x=Year, y=Percent, color=Collocation)) + 
-  ggtitle("Collocation trends for top parties") +
-  geom_point() + 
+list_coll_grouped <- list_coll_percent  %>%
+  filter(!(grepl('Syncretic', Collocation) & (Year < 2013))) %>%
+  mutate(Collocation = 
+           ifelse(
+             grepl('Left', Collocation), 
+             'Left',
+             ifelse(
+               grepl('Right', Collocation), 
+               'Right', 
+               Collocation
+             )
+           )
+  ) %>%
+  group_by(Year,House,Collocation) %>%
+  summarise_all(sum)
+
+coll_years_anim <- ggplot(
+  list_coll_grouped, 
+  aes(x=Year, y=Percent, color=Collocation)) + 
+  ggtitle("Collocation of top parties") +
+  geom_line() + 
+  geom_point() +
+  geom_text(aes(x = Year + 1, label = Collocation), hjust = 0) + 
   scale_x_continuous(breaks=election_years) +
   scale_color_brewer(palette = "Set2") +
   ylab('% of votes') + 
   facet_grid(vars(House)) +
-  theme_bw() +
+  theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 60, hjust = 1)
-    )
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none",
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey", fill = NA)
+    ) +
+  transition_reveal(Year) +
+  ease_aes("linear") +
+  enter_fade() +  
+  exit_fade()
 
-#TODO - Next up
-#Group left and right -> line plot
-#Vertical mirror barchart left/right - far-left/far-right, centre-left/centre-right
+coll_years_anim
+
+list_coll_grouped
+```
+
+```{r}
+animate(coll_years_anim)
+# anim_save("collocation_over_years.gif")
+```
+
+To compensate the lack of granularity of the previous plot, we will now provide a more complete view of the same topic. 
+In order to do it we will plot an interactive bar chart that will show all political collocations.
+
+```{r}
+list_coll_percent %>%
+  filter(!grepl('Senate', House)) %>%
+    plot_ly(
+      data = .,
+      x = ~Collocation, 
+      y = ~Percent, 
+      color = ~Collocation, 
+      frame = ~Year, 
+      text = ~Percent, 
+      hoverinfo = "text",
+      type = 'bar',
+      mode = 'markers'
+    ) %>%
+    layout(
+      xaxis = list(autorange = FALSE)
+    ) %>%
+    animation_opts(
+      easing = "elastic", redraw = FALSE
+    )
 ```
 
 
