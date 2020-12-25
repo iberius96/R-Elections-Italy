@@ -23,6 +23,7 @@ library(gganimate)
 library(gifski)
 library(plotly)
 library(tidyr)
+library(knitr)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -251,6 +252,8 @@ list_reg_top <- list_reg %>%
   group_by(Region, Year, House) %>% 
   filter(quantile(Votes, 0.7)<Votes)
 
+list_it_top
+
 # To this top parties, we would also like to associate their poilitical collocation
 # (Far-Left,Left,Centre-Left,Centre,Centre-Right,Syncretic,Right,Far-Right)
 party_collocation <- read.csv(
@@ -259,18 +262,17 @@ party_collocation <- read.csv(
   sep = ";"
 )
 
-list_it_top <- left_join(
+list_it_top <- full_join(
   list_it_top,
   party_collocation
 )
 
-list_reg_top <- left_join(
+list_reg_top <- full_join(
   list_reg_top,
   party_collocation
 )
 
 list_it_top
-list_reg_top
 ```
 
 ## Importing and cleaning labour market data
@@ -348,11 +350,16 @@ Now, we can split this large dataset into a national and a regional one.
 ```{r}
 empl_rate_it <- empl_rate %>%
   filter(Region == 'Italia') %>%
-  subset(select = -Region)
+  subset(select = -Region) %>%
+  mutate(Year = as.integer(Year)) %>%
+  rename(Empl.Rate = Value)
 
 empl_rate_reg <- empl_rate %>%
-  filter(Region != 'Italia')
+  filter(Region != 'Italia') %>%
+  mutate(Year = as.integer(Year)) %>%
+  rename(Empl.Rate = Value)
 
+empl_rate_it
 empl_rate_reg
 ```
 
@@ -643,7 +650,6 @@ shinyApp(ui, server)
 A very simple initial visualization for this type of data would be a general overview of the voter turnout, for both houses, throughout all the election years.
 
 ```{r}
-# Voter turnout trend
 ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) + 
   ggtitle("Voter turnout") +
   geom_line() + 
@@ -656,8 +662,8 @@ ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
   #geom_text_repel(aes(x=1948, label = 'Hello'))
-
 ```
+
 As we can see, the voter turnout has steadily dropped after 1976, going from more than 90% to less than 70% in the 2018 election.
 Knowing this fact, it may also be interesting to visually explore how the proportions have changed between constituents and voters and how much these two groups have grown (together with the Italian population) during the last 70 years (which is an information that we are not able to gather from this first line chart).
 In order to do this, we are going to plot a bar chart, for both Houses, with the Voters bar overlayed on top of the Constituents one (since the Voters pool will always be smaller than the Constituents one).
@@ -754,6 +760,7 @@ coll_years_anim <- ggplot(
   ggtitle("Collocation of top parties") +
   geom_line() + 
   geom_point() +
+  geom_vline(xintercept=1994, color='Grey', linetype=2, alpha=0.5) +
   geom_text(aes(x = Year + 1, label = Collocation), hjust = 0) + 
   scale_x_continuous(breaks=election_years) +
   scale_color_brewer(palette = "Set2") +
@@ -778,8 +785,8 @@ list_coll_grouped
 ```
 
 ```{r}
-animate(coll_years_anim)
-# anim_save("collocation_over_years.gif")
+#anim_save("collocation_over_years.gif")
+include_graphics("collocation_over_years.gif")
 ```
 
 To compensate the lack of granularity of the previous plot, we will now provide a more complete view of the same topic. 
@@ -805,7 +812,37 @@ list_coll_percent %>%
     animation_opts(
       easing = "elastic", redraw = FALSE
     )
+
+list_coll_percent
 ```
+
+## Comparing unemployment rates with the shift in political views
+
+The previous plots clearly indicate the election of 1994 as a tipping point for the Italian politics. What was previously a country governed mostly by center (particularly Democrazia Cristiana) and Left wing parties quickly saw Right wing and Syncretic parties taking over the political landscape.
+We will now try to identify if changes in the labour market (particularly the unemployment rates) may have, at least in part, triggered this sudden change.
+
+```{r}
+ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) + 
+  ggtitle("Employment rate") +
+  geom_line() + 
+  geom_point()
+```
+
+## Extra - Visualizing Senate seats
+
+As a (somewhat) additional task, it may also be interesting to visually represent the seats for one of the two Houses.
+In order to do this, we will start by importing a new dataset
+
+```{r}
+seats_senate <- read.csv(
+  "./source/elections/italy/lists-Senate.csv",
+  header = TRUE, 
+  sep = ";"
+)
+
+seats_senate
+```
+
 
 
 
