@@ -24,6 +24,7 @@ library(gifski)
 library(plotly)
 library(tidyr)
 library(knitr)
+library(ggparliament)
 
 `%notin%` <- Negate(`%in%`)
 
@@ -252,8 +253,6 @@ list_reg_top <- list_reg %>%
   group_by(Region, Year, House) %>% 
   filter(quantile(Votes, 0.7)<Votes)
 
-list_it_top
-
 # To this top parties, we would also like to associate their poilitical collocation
 # (Far-Left,Left,Centre-Left,Centre,Centre-Right,Syncretic,Right,Far-Right)
 party_collocation <- read.csv(
@@ -262,23 +261,21 @@ party_collocation <- read.csv(
   sep = ";"
 )
 
-list_it_top <- full_join(
+list_it_top <- left_join(
   list_it_top,
   party_collocation
 )
 
-list_reg_top <- full_join(
+list_reg_top <- left_join(
   list_reg_top,
   party_collocation
 )
-
-list_it_top
 ```
 
-## Importing and cleaning labour market data
+## Importing and cleaning employment data
 
 First year with employment rate data (total + zone): 1973
-First year with region granularity: 1993
+First year with regional granularity: 1993
 
 We will start by importing data related to the employment rate in Italy.
 
@@ -364,6 +361,9 @@ empl_rate_reg
 ```
 
 ## Visualizing election data
+
+With our processed data, we are now ready to move to the visualization part of this project. 
+
 
 ```{r}
 # Centroid latitude and longitude in order to find the circle marker center for leaflet
@@ -507,6 +507,7 @@ In order to be able to dinammically change our map based on Year, House, Shape a
 
 ```{r}
 ui <- fluidPage(
+  titlePanel(title=h4("Electoral data", align="center")),
   sidebarLayout(
     sidebarPanel(
       selectInput(
@@ -538,7 +539,7 @@ ui <- fluidPage(
   fluidRow(infoBoxOutput('nat_info'))
 )
 
-server <- function(input, output, session) {
+server <- function(input, output) {
   # Filtering
   italy_React <- reactive({
     italy %>% filter(Year == input$year_sel, House == input$house_sel)
@@ -714,6 +715,8 @@ ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
   facet_grid(vars(House)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
+
+aggregate_list_reg
 ```
 This heatmap allows us to see the radical shift that ...
 Another interesting thing we can do with our data is calculating the percentage of parties belonging to/sharing a given political collocation (this will be an estimation over the total since we only have Collocation information for top voted parties).
@@ -761,6 +764,7 @@ coll_years_anim <- ggplot(
   geom_line() + 
   geom_point() +
   geom_vline(xintercept=1994, color='Grey', linetype=2, alpha=0.5) +
+  geom_vline(xintercept=2013, color='Grey', linetype=2, alpha=0.5) +
   geom_text(aes(x = Year + 1, label = Collocation), hjust = 0) + 
   scale_x_continuous(breaks=election_years) +
   scale_color_brewer(palette = "Set2") +
@@ -778,8 +782,6 @@ coll_years_anim <- ggplot(
   ease_aes("linear") +
   enter_fade() +  
   exit_fade()
-
-coll_years_anim
 
 list_coll_grouped
 ```
@@ -812,36 +814,118 @@ list_coll_percent %>%
     animation_opts(
       easing = "elastic", redraw = FALSE
     )
-
-list_coll_percent
 ```
 
 ## Comparing unemployment rates with the shift in political views
 
 The previous plots clearly indicate the election of 1994 as a tipping point for the Italian politics. What was previously a country governed mostly by center (particularly Democrazia Cristiana) and Left wing parties quickly saw Right wing and Syncretic parties taking over the political landscape.
-We will now try to identify if changes in the labour market (particularly the unemployment rates) may have, at least in part, triggered this sudden change.
+We will now try to identify if changes in the employment rates may have, at least in part, triggered this sudden change.
+
 
 ```{r}
-ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) + 
+empl_rate_coll <- inner_join(
+  empl_rate_it,
+  list_coll_grouped
+)
+
+empl_rate_coll
+```
+
+```{r}
+#facet_grid(vars(list_coll_grouped$House)) +
+p1 <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) + 
   ggtitle("Employment rate") +
   geom_line() + 
-  geom_point()
+  geom_point() +
+  scale_x_discrete(limits=election_years[election_years>=1976]) +
+  geom_vline(xintercept=1994, color='Grey', linetype=2, alpha=0.5) +
+  geom_vline(xintercept=2013, color='Grey', linetype=2, alpha=0.5) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none",
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "grey", fill = NA)
+    ) 
+
+p2 <- ggplot(list_coll_grouped[list_coll_grouped$House == 'Senate',], aes(x=Year, y=Percent, color=Collocation)) +
+  geom_line() +
+  theme_bw()
+
+ p1+ p2$layers[[1]]
+
+#
+
+#  geom_line(
+#    data=list_coll_grouped[list_coll_grouped$House == 'Senate',], 
+#    aes(x=Year, y=Percent, color=Collocation)
+#  ) +
 ```
+As we might have expected, this changes in political trends corresponds with local minimum values for the unemployment rates (years 1995 and 2013).
+The vertical dotted line represent (just like in the previous line chart) the election years in which a political shift happened in Italy.
+
 
 ## Extra - Visualizing Senate seats
 
 As a (somewhat) additional task, it may also be interesting to visually represent the seats for one of the two Houses.
-In order to do this, we will start by importing a new dataset
+In order to do this, we will start by importing a new dataset containing the number of Senate seats assigned to each political party during all mandates.
 
 ```{r}
-seats_senate <- read.csv(
-  "./source/elections/italy/lists-Senate.csv",
+senate_seats <- read.csv(
+  "./source/elections/Senate-seats.csv",
   header = TRUE, 
   sep = ";"
+) %>%
+  subset(select=-House)
+
+senate_seats
+```
+We can now use Shiny to create an interactive view that will dinamically display the senate seats for all election years.
+Additionally, we will use the ggparliament library to facilitate the creation of an accurate visualization of the Senate seats
+
+```{r}
+ui <- fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      selectInput(
+        inputId =  'year_sel', 
+        label = "Select year:", 
+        choices = election_years
+      )
+    ),
+    mainPanel(
+      plotOutput('seats')
+    )
+  )
 )
 
-seats_senate
+server <- function(input, output, session) {
+  # Filtering
+  senate_react <- reactive({
+    #senate_seats %>% filter(Year == input$year_sel)
+    senate_seats[senate_seats$Year==input$year_sel,]
+  })
+  
+  semicricle_react <- reactive({
+    senate_react() %>% 
+      parliament_data(type = "semicircle",
+                      parl_rows = 8,
+                      party_seats = senate_react()$Seats)
+  })
+
+  output$seats <- renderPlot({
+    semicricle_react() %>% ggplot(aes(x=x, y=y, colour=Party)) +
+    ggtitle("Senate seats") +
+    geom_parliament_seats() +
+    theme_ggparliament()
+  })
+}
+shinyApp(ui, server)
 ```
+
+## Conclusions
+
 
 
 
