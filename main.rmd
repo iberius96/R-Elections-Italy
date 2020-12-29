@@ -1,9 +1,9 @@
 ---
 title: 'R Project Samuele Ceol'
 output:
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 ```{r}
@@ -30,6 +30,11 @@ library(ggparliament)
 
 election_years <- c(1948, 1953, 1958, 1963, 1968, 1972, 1976, 1979, 1983, 1987, 1992, 1994, 1996, 2001, 2006, 2008, 2013, 2018)
 ```
+## Purpose of this project
+
+The main goal of this project is to provide a range of visual information regarding the Italian election for both Chamber and Senate.
+During the course of this work we will work with multiple election related features on both the national and regional level.
+Additionally, we would like to discover if the employment rates in Italy are a relevant factor in influencing the political direction of the country.
 
 ## Notes on translations
 
@@ -41,6 +46,8 @@ Scrutinio                   Ballot
 Lista (elettorale)          (Electoral) list
 Elettore                    Constituent
 Votante                     Voter
+Scheda bianca               Empty vote
+Scheda non valida           Null vote
 Camera (dei Deputati)       Chamber (of Deputies)   
 Senato (della Repubblica)   Senate (of the Republic)
 Trasversalismo              Syncretic (politics)
@@ -60,16 +67,38 @@ Since the earliest election year in our dataset is 1948, all votes come from bot
 All Italian citizen above the age of 18 can vote for the Chamber of Deputies.
 Only those who have reached the age of 25 are able to vote for the election of the Senate.
 
+## Information on data sources
+
+Source: Italian Government (https://elezionistorico.interno.gov.it/)
+Data: Lists and ballots for national and regional data
+Path: ./source/elections/regions, ./source/elections/italy
+File(s): lists-Senate-Reg.csv, ballots-Senate-Reg.csv, lists-Chamber-Reg.csv, ballots-Chamber-Reg.csv, ballots-Chamber.csv, lists-Chamber.csv, ballots-Senate.csv, lists-Senate.csv
+
+Source: Italian Senate (http://www.senato.it/)
+Data: Seats in the Italian Senate
+Path: ./source/elections
+File(s): senate-seats.csv
+
+Source: Wikipedia (https://en.wikipedia.org)
+Data: Parties collocation
+Path: ./source/elections
+File(s): party-collocation.csv
+
+Source: ISTAT (https://www4.istat.it/en/)
+Data: Employment rates
+Path: ./source/labour
+File(s): gdp-per-capita.csv
+
 ## Importing and cleaning political data
 
+We will start off our project by cleaning the data related to the italian elections.
 In order to reduce the number of .csv files associated with the project, some operation have been performed on the data sets outside of RStudio. 
-The .csv files on the Government website are separated by House (Chamber/Senate), by type (ballot/list) and by election year. In order to reduce the total number of election related files in the project, a new "Year" column has been added to the original data sets. After that the division by election year has been removed by merging the separate files.
+The .csv files on the Government website are separated by House (Chamber/Senate), by type (ballot/list) and by election year. 
+In order to reduce the total number of election related files in the project, a new "Year" column has been added to the original datasets. 
+After that, the division by election year has been removed by merging the separate files.
 The "candidate" column was also removed when present (since it was only there in an handful of election years).
 
-
 ```{r}
-# TODO - ballot_chamber_it, "Valle d'aosta" contains an NA value for "Schede.non.valide" in 2013, for now we are going to count that value as zero
-
 # National data (no region granularity)
 ballot_senate_it <- read.csv(
   "./source/elections/italy/ballots-Senate.csv", 
@@ -154,8 +183,9 @@ colnames(list_reg) <- c("Region", "Party", "Votes", "Year", "House")
 
 # We can group all lines that have the same year, house (and party for lists)
 # We don't care if votes come from within our outside the country (Region column)
-# We can also drop columns indicating empty (Schede.bianche) or invalid (Schede.non.valide) votes
+# We can also drop columns indicating empty or invalid votes
 # A new column indicating the voter turnout is also added
+# Voter turnout = (Voters / Constituents) * 100
 ballot_it <- ballot_it %>%
   subset(select = -c(Region, Empty.votes, Null.votes)) %>%
   group_by(Year, House) %>%
@@ -167,21 +197,23 @@ list_it <- list_it %>%
   group_by(Year, House, Party) %>%
   summarise_all(sum)
 
-# We want to "standardize" region names for both regional lists and ballots
+# We want to obtain uniform region names for both regional lists and ballots
 # Trim trailing whitespaces
 ballot_reg$Region <- trimws(
     ballot_reg$Region, 
     which = "r"
   ) 
 
-# For certain years, region are divided into "zones" (e.g. CAMPANIA 1, CAMPANIA 2, ...). We should remove the trailing integers
+# For certain years, region are divided into "zones" (e.g. CAMPANIA 1, CAMPANIA 2, ...). 
+# We should remove the trailing integers (and later group them)
 ballot_reg$Region <- sub(
     "\\s\\d+$", 
     "", 
     ballot_reg$Region
   )
 
-# We can now group by region, year and house standardize names for regions in which is not constant throughout the whole dataset
+# We can now group by region, year and house. 
+# We can also change region names for the years in which they are not consistent with the rest of the dataset
 ballot_reg <- ballot_reg %>%
   subset(select = -c(Empty.votes, Null.votes)) %>%
   group_by(Region, Year, House) %>%
@@ -200,6 +232,7 @@ ballot_reg <- ballot_reg %>%
     )
   )
 
+# Repeating a similar process for lists
 list_reg$Region <- trimws(
     list_reg$Region, 
     which = "r"
@@ -227,10 +260,10 @@ list_reg <- list_reg %>%
   )
 
 
-# TODO - Improve this aberration
+# TODO - Improve this aberration and add data to Molise
 #48 - 68 - Drop column since single regions have their own data
 #53 - 58 - 63 - Use data for both regions
-#Duplicating votes for 'Abruzzi e Molise' and moving them to the individual regions
+# Duplicating votes for 'Abruzzi e Molise' and moving them to the individual regions
 list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & list_reg$Year==1948),]
 list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & list_reg$Year==1968),]
 list_reg$Region[list_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
@@ -239,10 +272,16 @@ ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & ballot_reg$Ye
 ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & ballot_reg$Year==1968),]
 ballot_reg$Region[ballot_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
 
+list_reg
+list_it
+
 ballot_reg
 ballot_it
 ```
-For both national and regional lists we want to only keep a set percentile of top voted parties for each year.
+
+With this initial cleaning process we have organized our data into four different tables.
+At this point, as a somewhat secondary step, we would also like to obtain (for both national and regional lists) two data tables in which we will keep only a set percentile of top voted parties for each year. 
+This will later be useful to create more informative visualizations.
 
 ```{r}
 list_it_top <- list_it %>% 
@@ -252,9 +291,16 @@ list_it_top <- list_it %>%
 list_reg_top <- list_reg %>% 
   group_by(Region, Year, House) %>% 
   filter(quantile(Votes, 0.7)<Votes)
+```
 
-# To this top parties, we would also like to associate their poilitical collocation
-# (Far-Left,Left,Centre-Left,Centre,Centre-Right,Syncretic,Right,Far-Right)
+## Importing and adding collocation data
+
+We will now take this newly created data tables and append to them a new column with the purpose of describing the political collocation of the contained parties.
+This additional data will be taken by a new csv file especially created for this purpose.
+A political party always falls into one of the following collocations:
+Far-Left,Left,Centre-Left,Centre,Centre-Right,Syncretic,Right,Far-Right
+
+```{r}
 party_collocation <- read.csv(
   "./source/elections/party-collocation.csv", 
   header = TRUE, 
@@ -270,14 +316,17 @@ list_reg_top <- left_join(
   list_reg_top,
   party_collocation
 )
+
+list_it_top
+list_reg_top
 ```
 
 ## Importing and cleaning employment data
 
+We are now ready to import (and start cleaning) the second dataset that we will use in this project.
 First year with employment rate data (total + zone): 1973
 First year with regional granularity: 1993
-
-We will start by importing data related to the employment rate in Italy.
+We will start by importing the csv file containing the employment rate data.
 
 ```{r}
 empl_rate_raw <- read.csv(
@@ -286,10 +335,11 @@ empl_rate_raw <- read.csv(
   sep = ","
 )
 
-head(empl_rate_raw)
+empl_rate_raw
 ```
 
-In the raw dataset we have many columns that have id codes that are spelled out in other columns
+In the raw dataset we have many columns that have id codes that are spelled out in their complete form in other columns.
+The interested columns are highlited in the following table:
 
 ID COLUMN       FULL NAME COLUMN
 ITTER107        Territorio
@@ -300,31 +350,34 @@ TITOLO_STUDIO   Titolo.di.studio
 TIME            Seleziona.periodo 
 
 We can drop all columns containing ids.
-Using the unique() we can also notice that the columns "Tipo.data", "Flag.Codes" and "Flags" do not provide any useful data.
+Using the unique() function we can also notice that the columns "Tipo.data", "Flag.Codes" and "Flags" do not provide any useful data.
 
 ```{r}
-# Drop
+unique(empl_rate_raw$Tipo.data)
+unique(empl_rate_raw$Flag.Codes)
+unique(empl_rate_raw$Flags)
+```
+
+Because of this reason, we can drop this columns too.
+
+```{r}
+# Drop columns
 empl_rate <- empl_rate_raw %>%
   subset(select = -c(ITTER107, TIPO_DATO_FOL, SEXISTAT1, ETA1, TITOLO_STUDIO, TIME, Tipo.dato, Flag.Codes, Flags))
 
-# Translate
+# Translate column names
 colnames(empl_rate) <- c("Region", "Sex", "Age", "Education.level", "Year", "Value")
+
+empl_rate
 ```
 
 At this point, the dataset still contains an higher level of granularity than needed. 
-
-Since we are not looking for a division based on the level of education, we want to keep only the rows where the education level has value total (totale), then we can drop the "Education.level" column.
-
+Since we are not looking for a division based on the level of education, we want to keep only the rows where the education level has value total (totale), we can then drop the "Education.level" column.
 We can do the same thing for the age column. In this case we will keep the rows that have age range 15-64, which is the widest possible range for people in their working years.
-We could keep the 15+ range instead, but this would significantly lower the employment values since it also considers the senile population.
-
-Totals values can also be kept for the sex related column.
-
+We could keep the 15+ range instead, but this would significantly lower the mean employment values since it also considers the senile population.
+We can also filter out male/females rows on the sex column in order to keep only the totals values.
 The year columns also contains quarterly values for each year. We can drop the quarterly rows and keep only the aggregate data for each year.
-
 We also need to drop some values from the Region column. In this regard we want to keep only the national values and the regional values (hence dropping the ones related to macro-regions).
-
-Finally, we will provide a translation for the content of the Sex column.
 
 ```{r}
 macro_regions <- c("Nord", "Nord-ovest", "Nord-est", "Centro", "Mezzogiorno")
@@ -342,7 +395,7 @@ empl_rate <- empl_rate %>%
 ```
 
 
-Now, we can split this large dataset into a national and a regional one.
+Now, we can split this large table into a national and a regional one.
 
 ```{r}
 empl_rate_it <- empl_rate %>%
@@ -363,7 +416,10 @@ empl_rate_reg
 ## Visualizing election data
 
 With our processed data, we are now ready to move to the visualization part of this project. 
-
+We will start this chapter by trying to create a map of Italy displaying multiple information regarding our election data.
+In order to do this, we will get the geom. data needed to plot Italy on a map by using the ne_state() function of the naturalearth library.
+After that, we will need to group the resulting rows based on region (since that is the smallest level of granularity we are interested in).
+Final, we will calculate the centroid latitude and longitude for each region. This will be later useful to conditionally plot bubbles that are correctly centered to the corresponding regions.
 
 ```{r}
 # Centroid latitude and longitude in order to find the circle marker center for leaflet
@@ -383,7 +439,13 @@ italy <- ne_states(country="Italy", returnclass="sf") %>%
     centroid_lat = st_coordinates(st_centroid(geometry))[,1],
     centroid_long = st_coordinates(st_centroid(geometry))[,2]
   )
+
+italy
 ```
+
+In order to have all we need in a single table, we will the geom data that we just gathered with the electoral data that we cleaned at the beginning of this project.
+Starting from the two tables containing lists, we will try to group multiple rows belonging to the same year and House. The party and votes columns will be merged together (the final format will be "Party: Votes") and the values belonging to multiple rows will be separated by a HTML <br> tag.
+This grouping will make it easier for us to display these information directly on a map without doing this processing in real time.
 
 ```{r}
 # Building aggregate lists
@@ -391,7 +453,7 @@ aggregate_list_it <- list_it_top %>%
   group_by(Year, House) %>%
   arrange(-Votes) %>% 
   mutate(
-    Party = paste(Party, Votes, sep = ':', collapse = '<br/>'),
+    Party = paste(Party, formatC(Votes, format="f", big.mark = ",", digits=0), sep = ':', collapse = '<br/>'),
     Collocation = first(Collocation)
     ) %>%
   subset(select = -c(Votes)) %>%
@@ -401,12 +463,16 @@ aggregate_list_reg <- list_reg_top %>%
   group_by(Year, Region, House) %>%
   arrange(-Votes) %>%
   mutate(
-    Party = paste(Party, Votes, sep = ':', collapse = '<br/>'),
+    Party = paste(Party, formatC(Votes, format="f", big.mark = ",", digits=0), sep = ':', collapse = '<br/>'),
     Collocation = first(Collocation)
     ) %>%
   subset(select = -c(Votes)) %>%
   distinct(Region, Year, House, Party, Collocation)
+```
 
+We can now join the table containing the geom data with the grouped lists we have just created.
+
+```{r}
 # Contains geom data + regional data for both lists and ballots
 italy <- italy %>%
   inner_join(ballot_reg, by='Region') %>%
@@ -415,16 +481,21 @@ italy <- italy %>%
 italy
 ```
 
+At this point, our main table is finally ready to be used in our visualization.
+We will use the Leaflet library to create an interactive map of Italy.
+For starters, we are going to visually represent Chamber's results coming from the last election year.
+The region fill color (Green to Yellow to Red) will correspond to the voter turnout value.
+We will later explore how to make our map even more interactive by adding to ability to visualize a larger timespan.
 
 ```{r}
 # Filtering
 italy_filtered <- italy %>% 
-  filter(Year == 2018, House == 'Chamber')
+  filter(Year == max(italy$Year), House == 'Chamber')
 
 ballot_it_filtered <- ballot_it %>%
-filter(Year == 2018, House == 'Chamber')
+filter(Year == max(italy$Year), House == 'Chamber')
 
-# Label for bottom-right persistent legend
+# Label for bottom-right persistent legend (National level)
 it_labels <- paste(
   'Voter turnout: ', 
   ballot_it_filtered$Voter.turnout, 
@@ -438,12 +509,11 @@ it_labels <- paste(
 reg_labels <- paste(
   '<strong>Region: ', italy_filtered$Region, '</strong><br/>',
   'Voter turnout: ', italy_filtered$Voter.turnout, '<br/>',
-  'Parties: ', italy_filtered$Party
+  'Parties:<br/>', italy_filtered$Party
 ) %>%
   lapply(htmltools::HTML)
 
-
-pal <- colorNumeric(palette = 'YlOrRd',domain = italy_filtered$Voter.turnout)
+pal <- colorNumeric(palette = 'RdYlGn',domain = italy_filtered$Voter.turnout)
 
 leaflet(italy_filtered) %>%
 addPolygons(
@@ -458,11 +528,16 @@ addLegend(pal = pal,
           values = italy_filtered$Voter.turnout,
           opacity = 0.7,
           title = 'Voter Turnout',
-          position = 'bottomright')
+          position = 'bottomright',
+          labFormat = labelFormat(suffix = "%"))
 
 ```
+
+This initial visualization already gives us an interesting look at the chosen election year.
+We would now like to try to use our collocation data to fill our regions rather than the voter turnout.
+
 ```{r}
-palColl <-colorFactor(viridis(7), italy_filtered$collocation)
+palColl <- colorFactor('Set2', domain=c('Far-Left','Left','Centre-Left','Centre','Syncretic','Centre-Right','Right','Far-Right'))
 
 collLabels <- unique(italy$Collocation)
 
@@ -484,6 +559,9 @@ addLegend(pal = palColl,
           position = 'bottomright')
 ```
 
+We can now try to utilize the centroid information that we've calculate before to plot bubbles instead of region shape.
+The bubble size will be directly related to the total nr of voters for each region.
+
 ```{r}
 leaflet(italy_filtered) %>%
 addCircleMarkers(
@@ -503,7 +581,8 @@ addLegend(pal = pal,
           position = 'bottomright')
 ```
 
-In order to be able to dinammically change our map based on Year, House, Shape and Fill Color,  we can proceed to move everything we have written thus far into a shiny app.
+In order to be able to dinammically change our map based on Year, House, Shape and Fill Color,  we can proceed to merge everything we have written thus far into a single shiny app.
+In this final visualization we will also add a persistent text box that will display information for the national level.
 
 ```{r}
 ui <- fluidPage(
@@ -531,12 +610,11 @@ ui <- fluidPage(
         choices = c('Voter turnout', 'Top party collocation')
       )
     ),
-    
     mainPanel(
-      leafletOutput('map')
-    )
-  ),
-  fluidRow(infoBoxOutput('nat_info'))
+      leafletOutput('map'),
+      fluidRow(infoBoxOutput('nat_info'))
+    ),
+  )
 )
 
 server <- function(input, output) {
@@ -555,10 +633,10 @@ server <- function(input, output) {
   
   pal <- reactive({
     if(input$fill_sel == 'Voter turnout') {
-      colorNumeric(palette = 'YlOrRd',domain = italy_React()$Voter.turnout)
+      colorNumeric(palette = 'RdYlGn',domain = c(min(italy$Voter.turnout), max(italy$Voter.turnout)))
     }
     else if(input$fill_sel == 'Top party collocation') {
-      colorFactor(viridis(7), italy_React()$Collocation)
+      colorFactor('Set2', domain=c('Far-Left','Left','Centre-Left','Centre','Syncretic','Centre-Right','Right','Far-Right'))
     }
   })
     
@@ -567,7 +645,7 @@ server <- function(input, output) {
     reg_labels <- paste(
       '<strong>Region: ', italy_React()$Region, '</strong><br/>',
       'Voter turnout: ', italy_React()$Voter.turnout, '<br/>',
-      'Parties: ', italy_React()$Party
+      'Parties:<br/>', italy_React()$Party
     ) %>%
       lapply(htmltools::HTML)
   })
@@ -578,7 +656,7 @@ server <- function(input, output) {
         'Voter turnout: ', 
         ballot_React()$Voter.turnout, 
         '<br/>',
-        'Parties: ', 
+        'Parties:<br/>', 
         aggregate_list_React()$Party
       ) %>%
         lapply(htmltools::HTML)
@@ -642,13 +720,15 @@ server <- function(input, output) {
         pal = pal(),  
         values = fillCol(),
         opacity = 0.7,
-        position = 'bottomright')
+        position = 'bottomright',
+        )
   })
 }
 
 shinyApp(ui, server)
 ```
-A very simple initial visualization for this type of data would be a general overview of the voter turnout, for both houses, throughout all the election years.
+Now that we have provided a fairly complete and interactive look at our data, we will proceed to display more specific information that was maybe not immediately noticeable from our previous efforts.
+A very simple initial visualization for this type of information would be a general overview of the voter turnout, for both houses, throughout all the election years.
 
 ```{r}
 ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) + 
@@ -678,15 +758,18 @@ ggplot(ballots_it) +
   geom_col(aes(x=Year, y=Voters, fill='Voters'), colour='#000000') +
   scale_x_continuous(breaks=election_years) +
   scale_y_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
-  scale_fill_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2", direction=-1) +
   facet_grid(vars(House)) +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.title = element_blank())
 ```  
-As we can see, despite a much bigger pool of Constituents (caused, more than likely, by an increase in the overall population), the total number of voters ...
+As we can see, despite a much bigger pool of Constituents (caused, more than likely, by an increase in the overall population), the disparity between voters and constituents has constantly increased starting from the 70s.
 
 After these initial views on some basic data related to the election years for both Houses, we can start to take a closer look at the parties that were part of said elections.
 We will start by plotting the total nr. of parties that were present for each election year (at the national level).
+We can also display a linear regression line to better understand how this specific trend is moving.
 
 ```{r}
 # Diversity - Total nr of parties voted each election
@@ -696,6 +779,7 @@ list_it_grouped <- list_it %>%
 
 ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
   ggtitle("Total nr. of parties per election year") +
+  geom_smooth(method='lm', color='black', se=FALSE, linetype='twodash', size=0.75, show.legend=FALSE, alpha=0.4) +
   geom_col(colour='#000000') +
   scale_x_continuous(breaks=election_years) +
   scale_fill_brewer(palette = "Set2") +
@@ -704,23 +788,26 @@ ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
+This bar chart allows us to see how the total number of parties per election years is generally increasing compared to te first elections. We can also see how election years like 1994 (for Cahmber) and 2006/2008 have a noticeably higher nr of total parties participating to the election.
+
+A this point, a good idea would be to display the changes in the political specturm for all regions across all election years.
+A good way to display this information is to use a heatmap.
 
 ```{r}
 #Heatmap x=year, y=region, fill=collocation
 ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
   ggtitle("Political collocation of top voted parties") +
-  geom_tile(colour='#000000') +
+  geom_tile(colour='black') +
   scale_x_continuous(breaks=election_years) +
   scale_fill_brewer(palette = "Set2") +
   facet_grid(vars(House)) +
-  theme_bw() +
+  theme_test() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
-
-aggregate_list_reg
 ```
-This heatmap allows us to see the radical shift that ...
+This heatmap allows us to see the radical shift that took place in Italy in the middle of the 90s. We will later try to justify this shift using the employment data that we have previously imported.
+
 Another interesting thing we can do with our data is calculating the percentage of parties belonging to/sharing a given political collocation (this will be an estimation over the total since we only have Collocation information for top voted parties).
-In order to to this, we will group together (for each Year and House) all the rows with parties belonging to the same political collocation and we will add a new Percent column that will indicate the percentage of votes that the given collocation has received in the specific election year.
+In order to do this, we will group together (for each Year and House) all the rows with parties belonging to the same political collocation and we will add a new Percent column that will indicate the percentage of votes that the given collocation has received in the specific election year.
 This additional data will allow us to further explore the change in political view of the Italian population that was introduced in the previous plot. 
 
 ```{r}
@@ -734,9 +821,8 @@ list_coll_percent <- list_reg_top %>%
 list_coll_percent
 ```
 
-Firstly, we will create an animated lineplot to visually show how 
-
-In order to avoid excessive clutter, we are going to group together all collocations belonging to the same spectrum (e.g. Far-Left, Left and Centre-Left will be grouped together into Left).
+Firstly, we will create an animated lineplot to visually show how these percentages have moved throughout the years.
+In order to avoid an excessive clutter that would make this animation unreadable, we are going to group together all collocations belonging to the same spectrum (e.g. Far-Left, Left and Centre-Left will be grouped together into Left).
 Syncretic rows kept only for 2013 and 2018 to account for the rise of M5S.
 
 
@@ -766,7 +852,7 @@ coll_years_anim <- ggplot(
   geom_vline(xintercept=1994, color='Grey', linetype=2, alpha=0.5) +
   geom_vline(xintercept=2013, color='Grey', linetype=2, alpha=0.5) +
   geom_text(aes(x = Year + 1, label = Collocation), hjust = 0) + 
-  scale_x_continuous(breaks=election_years) +
+  scale_x_continuous(breaks=election_years, limits = c(min(election_years), max(election_years)+7)) +
   scale_color_brewer(palette = "Set2") +
   ylab('% of votes') + 
   facet_grid(vars(House)) +
@@ -783,20 +869,22 @@ coll_years_anim <- ggplot(
   enter_fade() +  
   exit_fade()
 
-list_coll_grouped
+animate(coll_years_anim, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
 ```
 
 ```{r}
-#anim_save("collocation_over_years.gif")
+anim_save("collocation_over_years.gif")
 include_graphics("collocation_over_years.gif")
 ```
 
 To compensate the lack of granularity of the previous plot, we will now provide a more complete view of the same topic. 
-In order to do it we will plot an interactive bar chart that will show all political collocations.
+In order to do it we will plot an interactive bar chart that will show all political collocations. We will use the plotly library to achieve this
 
 ```{r}
-list_coll_percent %>%
-  filter(!grepl('Senate', House)) %>%
+# TODO - Finish fixing
+plot_coll_bar <- function(curr_house) {
+  list_coll_percent %>%
+  filter(!grepl(curr_house, House)) %>%
     plot_ly(
       data = .,
       x = ~Collocation, 
@@ -809,18 +897,23 @@ list_coll_percent %>%
       mode = 'markers'
     ) %>%
     layout(
-      xaxis = list(autorange = FALSE)
+      title = 'Collocation of top parties'
     ) %>%
     animation_opts(
       easing = "elastic", redraw = FALSE
     )
+}
+
+coll_senate <- plot_coll_bar('Senate')
+coll_chamber <- plot_coll_bar('Chamber')
+
+subplot(coll_chamber, coll_senate, nrows = 2, shareX = TRUE)
 ```
 
-## Comparing unemployment rates with the shift in political views
+## Comparing employment rates with the shift in political views
 
 The previous plots clearly indicate the election of 1994 as a tipping point for the Italian politics. What was previously a country governed mostly by center (particularly Democrazia Cristiana) and Left wing parties quickly saw Right wing and Syncretic parties taking over the political landscape.
 We will now try to identify if changes in the employment rates may have, at least in part, triggered this sudden change.
-
 
 ```{r}
 empl_rate_coll <- inner_join(
@@ -855,6 +948,7 @@ p2 <- ggplot(list_coll_grouped[list_coll_grouped$House == 'Senate',], aes(x=Year
 
  p1+ p2$layers[[1]]
 
+# TODO - Finish comparison
 #
 
 #  geom_line(
@@ -862,7 +956,7 @@ p2 <- ggplot(list_coll_grouped[list_coll_grouped$House == 'Senate',], aes(x=Year
 #    aes(x=Year, y=Percent, color=Collocation)
 #  ) +
 ```
-As we might have expected, this changes in political trends corresponds with local minimum values for the unemployment rates (years 1995 and 2013).
+As we might have expected, this changes in political trends corresponds with local minimum values for the employment rates (years 1995 and 2013).
 The vertical dotted line represent (just like in the previous line chart) the election years in which a political shift happened in Italy.
 
 
@@ -873,7 +967,7 @@ In order to do this, we will start by importing a new dataset containing the num
 
 ```{r}
 senate_seats <- read.csv(
-  "./source/elections/Senate-seats.csv",
+  "./source/elections/senate-seats.csv",
   header = TRUE, 
   sep = ";"
 ) %>%
@@ -881,8 +975,8 @@ senate_seats <- read.csv(
 
 senate_seats
 ```
-We can now use Shiny to create an interactive view that will dinamically display the senate seats for all election years.
-Additionally, we will use the ggparliament library to facilitate the creation of an accurate visualization of the Senate seats
+We can now use Shiny to create an interactive view that will dynamically display the senate seats for all election years.
+Additionally, we will use the ggparliament library to facilitate the creation of an accurate visualization of the Senate seats.
 
 ```{r}
 ui <- fluidPage(
@@ -918,14 +1012,15 @@ server <- function(input, output, session) {
     semicricle_react() %>% ggplot(aes(x=x, y=y, colour=Party)) +
     ggtitle("Senate seats") +
     geom_parliament_seats() +
-    theme_ggparliament()
+    theme_ggparliament() +
+    scale_color_brewer(palette = "Set2") 
   })
 }
 shinyApp(ui, server)
 ```
 
 ## Conclusions
-
+# TODO - Write conclusion
 
 
 
