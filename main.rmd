@@ -508,7 +508,7 @@ it_labels <- paste(
 # Label for individual regions
 reg_labels <- paste(
   '<strong>Region: ', italy_filtered$Region, '</strong><br/>',
-  'Voter turnout: ', italy_filtered$Voter.turnout, '<br/>',
+  'Voter turnout: ', italy_filtered$Voter.turnout, '%<br/>',
   'Parties:<br/>', italy_filtered$Party
 ) %>%
   lapply(htmltools::HTML)
@@ -578,13 +578,15 @@ addLegend(pal = pal,
           values = italy_filtered$Voter.turnout,
           opacity = 0.7,
           title = 'Voter Turnout',
-          position = 'bottomright')
+          position = 'bottomright',
+          labFormat = labelFormat(suffix = "%"))
 ```
 
 In order to be able to dinammically change our map based on Year, House, Shape and Fill Color,  we can proceed to merge everything we have written thus far into a single shiny app.
 In this final visualization we will also add a persistent text box that will display information for the national level.
 
 ```{r}
+# TODO - Missing values certain years
 ui <- fluidPage(
   titlePanel(title=h4("Electoral data", align="center")),
   sidebarLayout(
@@ -633,10 +635,27 @@ server <- function(input, output) {
   
   pal <- reactive({
     if(input$fill_sel == 'Voter turnout') {
-      colorNumeric(palette = 'RdYlGn',domain = c(min(italy$Voter.turnout), max(italy$Voter.turnout)))
+      colorNumeric(
+        palette = 'RdYlGn',
+        domain = c(min(italy$Voter.turnout), max(italy$Voter.turnout)
+      )
+    )
     }
-    else if(input$fill_sel == 'Top party collocation') {
-      colorFactor('Set2', domain=c('Far-Left','Left','Centre-Left','Centre','Syncretic','Centre-Right','Right','Far-Right'))
+    else {
+      colorFactor(
+        'Set2', 
+        domain=c('Far-Left','Left','Centre-Left','Centre','Syncretic','Centre-Right','Right','Far-Right')
+      )
+    }
+  })
+  
+  fillCol <- reactive({
+    #Fill column
+    if(input$fill_sel == 'Voter turnout') {
+      italy_React()$Voter.turnout
+    }
+    else {
+      italy_React()$Collocation
     }
   })
     
@@ -644,7 +663,7 @@ server <- function(input, output) {
   reg_labels <- reactive({
     reg_labels <- paste(
       '<strong>Region: ', italy_React()$Region, '</strong><br/>',
-      'Voter turnout: ', italy_React()$Voter.turnout, '<br/>',
+      'Voter turnout: ', italy_React()$Voter.turnout, '%<br/>',
       'Parties:<br/>', italy_React()$Party
     ) %>%
       lapply(htmltools::HTML)
@@ -653,28 +672,15 @@ server <- function(input, output) {
   output$nat_info <- renderInfoBox({
     infoBox(
       paste(
-        'Voter turnout: ', 
-        ballot_React()$Voter.turnout, 
-        '<br/>',
-        'Parties:<br/>', 
-        aggregate_list_React()$Party
+        'Voter turnout: ', ballot_React()$Voter.turnout, '%<br/>',
+        'Parties:<br/>', aggregate_list_React()$Party
       ) %>%
         lapply(htmltools::HTML)
     )
   })
   
-  fillCol <- reactive({
-    #Fill column
-    if(input$fill_sel == 'Voter turnout') {
-      italy_React()$Voter.turnout
-    }
-    else if(input$fill_sel == 'Top party collocation') {
-      italy_React()$Collocation
-    }
-  })
-  
   map_data <- reactive({
-    if(input$shape_sel == 'Regions') {
+    if((input$shape_sel == 'Regions')) {
       m <- leaflet(italy_React()) %>%
       addPolygons(
           stroke = TRUE,
@@ -715,13 +721,27 @@ server <- function(input, output) {
   })
 
   output$map <- renderLeaflet({
-    map_data() %>%
-    addLegend(
-        pal = pal(),  
-        values = fillCol(),
-        opacity = 0.7,
-        position = 'bottomright',
+    if(input$fill_sel == 'Voter turnout') {
+      map_data() %>%
+      addLegend(
+          pal = pal(),  
+          values = fillCol(),
+          opacity = 0.7,
+          position = 'bottomright',
+          title = 'Voter Turnout',
+          labFormat = labelFormat(suffix = "%"),
         )
+    }
+    else {
+      map_data() %>%
+      addLegend(
+          pal = pal(),  
+          values = fillCol(),
+          opacity = 0.7,
+          position = 'bottomright',
+          title = 'Collocation',
+        )
+    }
   })
 }
 
