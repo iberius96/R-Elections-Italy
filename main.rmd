@@ -32,9 +32,9 @@ election_years <- c(1948, 1953, 1958, 1963, 1968, 1972, 1976, 1979, 1983, 1987, 
 ```
 ## Purpose of this project
 
-The main goal of this project is to provide a range of visual information regarding the Italian election for both Chamber and Senate.
-During the course of this work we will work with multiple election related features on both the national and regional level.
-Additionally, we would like to discover if the employment rates in Italy are a relevant factor in influencing the political direction of the country.
+The main goal of this project is to provide a range of visual information regarding the Italian elections for both Chamber and Senate.
+During the course of this work we will work with multiple election related features both at the national and regional level.
+Additionally, we would like to find out if the employment rates in Italy are a relevant factor in influencing the political direction of the country.
 
 ## Notes on translations
 
@@ -214,7 +214,10 @@ ballot_reg$Region <- sub(
 
 # We can now group by region, year and house. 
 # We can also change region names for the years in which they are not consistent with the rest of the dataset
-ballot_reg <- ballot_reg %>%
+# For years 48/68 - Drop column with 'ABRUZZI E MOLISE' since the individual regions have their own data
+# For the other years with 'ABRUZZI E MOLISE', separate the rows and use for both regions
+ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & (ballot_reg$Year==1948 | ballot_reg$Year==1968)),] %>%
+  separate_rows(Region, sep = ' E ') %>%
   subset(select = -c(Empty.votes, Null.votes)) %>%
   group_by(Region, Year, House) %>%
   summarise_all(sum) %>%
@@ -243,7 +246,8 @@ list_reg$Region <- sub(
     list_reg$Region
   )
 
-list_reg <- list_reg %>%
+list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & (list_reg$Year==1948 | list_reg$Year==1968)),]  %>%
+  separate_rows(Region, sep = ' E ') %>%
   group_by(Region, Year, House, Party) %>%
   summarise_all(sum) %>%
   mutate(
@@ -259,18 +263,9 @@ list_reg <- list_reg %>%
     )
   )
 
-
-# TODO - Improve this aberration and add data to Molise
-#48 - 68 - Drop column since single regions have their own data
-#53 - 58 - 63 - Use data for both regions
-# Duplicating votes for 'Abruzzi e Molise' and moving them to the individual regions
-list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & list_reg$Year==1948),]
-list_reg <- list_reg[!(list_reg$Region=='ABRUZZI E MOLISE' & list_reg$Year==1968),]
-list_reg$Region[list_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
-
-ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & ballot_reg$Year==1948),]
-ballot_reg <- ballot_reg[!(ballot_reg$Region=='ABRUZZI E MOLISE' & ballot_reg$Year==1968),]
-ballot_reg$Region[ballot_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
+  
+#list_reg$Region[list_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
+#ballot_reg$Region[ballot_reg$Region=='ABRUZZI E MOLISE'] <- 'ABRUZZO'
 
 list_reg
 list_it
@@ -468,6 +463,9 @@ aggregate_list_reg <- list_reg_top %>%
     ) %>%
   subset(select = -c(Votes)) %>%
   distinct(Region, Year, House, Party, Collocation)
+
+aggregate_list_it
+aggregate_list_reg
 ```
 
 We can now join the table containing the geom data with the grouped lists we have just created.
@@ -586,7 +584,6 @@ In order to be able to dinammically change our map based on Year, House, Shape a
 In this final visualization we will also add a persistent text box that will display information for the national level.
 
 ```{r}
-# TODO - Missing values certain years
 ui <- fluidPage(
   titlePanel(title=h4("Electoral data", align="center")),
   sidebarLayout(
@@ -756,13 +753,13 @@ ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) +
   geom_line() + 
   geom_point() +  
   expand_limits(y=c(50, 100)) +
+  scale_y_continuous(labels=function(x) paste0(x, '%')) +
   scale_x_continuous(breaks=election_years) +
   scale_color_brewer(palette = "Set2") +
   ylab('Voter turnout') + 
   facet_grid(vars(House)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
-  #geom_text_repel(aes(x=1948, label = 'Hello'))
 ```
 
 As we can see, the voter turnout has steadily dropped after 1976, going from more than 90% to less than 70% in the 2018 election.
@@ -770,12 +767,11 @@ Knowing this fact, it may also be interesting to visually explore how the propor
 In order to do this, we are going to plot a bar chart, for both Houses, with the Voters bar overlayed on top of the Constituents one (since the Voters pool will always be smaller than the Constituents one).
 
 ```{r}
-# Y = Votes, X = years, Bar = divided by consitutents/voters (%)
 ggplot(ballots_it) +
   ggtitle("Voters/Constituents proportion") +
   geom_hline(yintercept=mean(ballots_it$Voters), linetype='dotted')+
-  geom_col(aes(x=Year, y=Constituents, fill='Constituents'), colour='#000000') +
-  geom_col(aes(x=Year, y=Voters, fill='Voters'), colour='#000000') +
+  geom_col(aes(x=Year, y=Constituents, fill='Constituents'), colour='black') +
+  geom_col(aes(x=Year, y=Voters, fill='Voters'), colour='black') +
   scale_x_continuous(breaks=election_years) +
   scale_y_continuous(labels = scales::unit_format(unit = "M", scale = 1e-6)) +
   scale_fill_brewer(palette = "Set2", direction=-1) +
@@ -792,7 +788,6 @@ We will start by plotting the total nr. of parties that were present for each el
 We can also display a linear regression line to better understand how this specific trend is moving.
 
 ```{r}
-# Diversity - Total nr of parties voted each election
 list_it_grouped <- list_it %>%
   group_by(Year, House) %>%
   summarise(Party = n_distinct(Party))
@@ -800,7 +795,8 @@ list_it_grouped <- list_it %>%
 ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
   ggtitle("Total nr. of parties per election year") +
   geom_smooth(method='lm', color='black', se=FALSE, linetype='twodash', size=0.75, show.legend=FALSE, alpha=0.4) +
-  geom_col(colour='#000000') +
+  geom_col(colour='black') +
+  scale_y_continuous(labels=function(x) paste0(x, '%')) +
   scale_x_continuous(breaks=election_years) +
   scale_fill_brewer(palette = "Set2") +
   ylab('Nr. of parties') +
@@ -808,13 +804,12 @@ ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
-This bar chart allows us to see how the total number of parties per election years is generally increasing compared to te first elections. We can also see how election years like 1994 (for Cahmber) and 2006/2008 have a noticeably higher nr of total parties participating to the election.
+This bar chart allows us to see how the total number of parties per election years is generally increasing compared to the first election years. We can also see how election years like 1994 (for Cahmber) and 2006/2008 have a noticeably higher nr of total parties participating to the election.
 
 A this point, a good idea would be to display the changes in the political specturm for all regions across all election years.
 A good way to display this information is to use a heatmap.
 
 ```{r}
-#Heatmap x=year, y=region, fill=collocation
 ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
   ggtitle("Political collocation of top voted parties") +
   geom_tile(colour='black') +
@@ -824,7 +819,7 @@ ggplot(aggregate_list_reg, aes(x=Year,y=Region,fill=Collocation)) +
   theme_test() +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
 ```
-This heatmap allows us to see the radical shift that took place in Italy in the middle of the 90s. We will later try to justify this shift using the employment data that we have previously imported.
+This heatmap allows us to see the radical shifts that took place in Italy starting from the middle of the 90s. We will later try to briefly justify this shifts using the employment data that we have previously imported.
 
 Another interesting thing we can do with our data is calculating the percentage of parties belonging to/sharing a given political collocation (this will be an estimation over the total since we only have Collocation information for top voted parties).
 In order to do this, we will group together (for each Year and House) all the rows with parties belonging to the same political collocation and we will add a new Percent column that will indicate the percentage of votes that the given collocation has received in the specific election year.
@@ -872,6 +867,7 @@ coll_years_anim <- ggplot(
   geom_vline(xintercept=1994, color='Grey', linetype=2, alpha=0.5) +
   geom_vline(xintercept=2013, color='Grey', linetype=2, alpha=0.5) +
   geom_text(aes(x = Year + 1, label = Collocation), hjust = 0) + 
+  scale_y_continuous(labels=function(x) paste0(x, '%'), breaks=seq(0, 60, 10)) +
   scale_x_continuous(breaks=election_years, limits = c(min(election_years), max(election_years)+7)) +
   scale_color_brewer(palette = "Set2") +
   ylab('% of votes') + 
@@ -897,7 +893,8 @@ anim_save("collocation_over_years.gif")
 include_graphics("collocation_over_years.gif")
 ```
 
-To compensate the lack of granularity of the previous plot, we will now provide a more complete view of the same topic. 
+This animation reinforces what we discovered in the previous heatmap by clearly showing the two major shifts (here indicated by vertical dotted lines) that happend in the last 25 years.
+To compensate for the lack of granularity of this previous plot, we will now provide a more complete view of the same topic. 
 In order to do it we will plot an interactive bar chart that will show all political collocations. We will use the plotly library to achieve this
 
 ```{r}
@@ -908,16 +905,17 @@ plot_coll_bar <- function(curr_house) {
     plot_ly(
       data = .,
       x = ~Collocation, 
-      y = ~Percent, 
+      y = ~Percent/100, 
       color = ~Collocation, 
       frame = ~Year, 
-      text = ~Percent, 
+      text = ~Percent,
       hoverinfo = "text",
       type = 'bar',
       mode = 'markers'
     ) %>%
     layout(
-      title = 'Collocation of top parties'
+      title = 'Collocation of top parties',
+      yaxis = list(tickformat = '%')
     ) %>%
     animation_opts(
       easing = "elastic", redraw = FALSE
@@ -936,23 +934,25 @@ The previous plots clearly indicate the election of 1994 as a tipping point for 
 We will now try to identify if changes in the employment rates may have, at least in part, triggered this sudden change.
 
 ```{r}
-empl_rate_coll <- inner_join(
-  empl_rate_it,
-  list_coll_grouped
-)
-
-empl_rate_coll
-```
-
-```{r}
-#facet_grid(vars(list_coll_grouped$House)) +
-p1 <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) + 
-  ggtitle("Employment rate") +
+ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
   geom_line() + 
   geom_point() +
-  scale_x_discrete(limits=election_years[election_years>=1976]) +
+  geom_point(
+    data=empl_rate_it[empl_rate_it$Year==1995 | empl_rate_it$Year==2013,], 
+    aes(color='Red')
+  ) +
+  geom_text(
+    data=empl_rate_it[empl_rate_it$Year==1995 | empl_rate_it$Year==2013,], 
+    aes(color='Red', label='Local min.'),
+    hjust=-0.1, vjust=1.1, size=3
+  ) +
+  scale_x_discrete(limits=election_years[election_years>1976]) +
+  scale_y_continuous(labels=function(x) paste0(x, '%'), breaks=seq(53, 59, 1)) +
+  ylab('Employment rate') +
+  xlab('(Election) Year') +
   geom_vline(xintercept=1994, color='Grey', linetype=2, alpha=0.5) +
   geom_vline(xintercept=2013, color='Grey', linetype=2, alpha=0.5) +
+  ggtitle('Employment rate') +
   theme_bw() +
   theme(
     axis.text.x = element_text(angle = 60, hjust = 1),
@@ -960,25 +960,11 @@ p1 <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
     panel.grid.major = element_blank(), 
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = "grey", fill = NA)
-    ) 
-
-p2 <- ggplot(list_coll_grouped[list_coll_grouped$House == 'Senate',], aes(x=Year, y=Percent, color=Collocation)) +
-  geom_line() +
-  theme_bw()
-
- p1+ p2$layers[[1]]
-
-# TODO - Finish comparison
-#
-
-#  geom_line(
-#    data=list_coll_grouped[list_coll_grouped$House == 'Senate',], 
-#    aes(x=Year, y=Percent, color=Collocation)
-#  ) +
+  )
 ```
-As we might have expected, this changes in political trends corresponds with local minimum values for the employment rates (years 1995 and 2013).
-The vertical dotted line represent (just like in the previous line chart) the election years in which a political shift happened in Italy.
-
+As we might have expected, this changes in political trends line up with two local minimum values for the employment rates that we can see in the years 1995 and 2013.
+The vertical dotted lines represent (just like in the previous animated line chart) the election years in which a political shift happened in Italy.
+We can assume that this downturns in the labour market may have been the source for a general lack of trust from the Italian population in the current government. 
 
 ## Extra - Visualizing Senate seats
 
@@ -1040,7 +1026,18 @@ shinyApp(ui, server)
 ```
 
 ## Conclusions
-# TODO - Write conclusion
+
+During the course of this project we had the chance to explore multiple aspects related to the Italian elections for both Chamber and Senate.
+After collecting and cleaning our datasets we had the chance to provide an in-depth interactive map of Italy that provided a range of different information such us: Voter turnout, top voted parties, political collocation and total nr of voters.
+We then created a set of more static views that allowed us to give more focused insights in the previously mentioned topic.
+We also decided to add, at the end of this project, an additional chapter showing (once again) an interactive view of the Senate seats distribution throughout the various election years.
+
+As a brief final summary, we can list the findings derived from this exploration as follows:
+ - Despite an increasing pool of Italian constituents, the voter turnout has been steadily decreasing since the 70s (going from more than 90% to around 70% in the last election).
+ - The first 40 years of Italian elections (after WWII) have seen a very stable political landscape, which has been governed mostly by centre and left facing parties.
+ - The last 25 years have seen two major shifts in the political views of the country (first from centre/centre-left to centre-right, then from centre-right to syncretic/far-left).
+ - These two shifts seem to match very closely with downturns in the employment rates in Italy.
+ - The total pool of parties for each election is generally increasing.
 
 
 
