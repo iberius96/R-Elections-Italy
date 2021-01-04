@@ -886,21 +886,33 @@ coll_years_anim <- ggplot(
   exit_fade()
 
 animate(coll_years_anim, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
+anim_save("collocation_over_years.gif")
 ```
 
 ```{r}
-anim_save("collocation_over_years.gif")
 include_graphics("collocation_over_years.gif")
 ```
 
 This animation reinforces what we discovered in the previous heatmap by clearly showing the two major shifts (here indicated by vertical dotted lines) that happend in the last 25 years.
-To compensate for the lack of granularity of this previous plot, we will now provide a more complete view of the same topic. 
-In order to do it we will plot an interactive bar chart that will show all political collocations. We will use the plotly library to achieve this
+To compensate for the lack of granularity of this previous plot, we will now provide a more complete view on the same topic. 
+In order to achieve this, we will plot an interactive bar chart that will show all political collocations. We will use the plotly library to achieve this.
+To avoid unwanted behaviors in the interactive plot, let's first make sure that every year (and House) possess rows for all political collocations. 
 
 ```{r}
-# TODO - Finish fixing
+list_coll_filled <- list_coll_percent %>%
+  group_by(Year, House) %>%
+  complete(
+    Collocation = c('Far-Left','Left','Centre-Left','Centre','Syncretic','Centre-Right','Right','Far-Right'),
+    fill = list(Votes = 0, Percent = 0)
+  )
+
+list_coll_filled
+```
+We are now ready to create our visualization.
+
+```{r}
 plot_coll_bar <- function(curr_house) {
-  list_coll_percent %>%
+  list_coll_filled %>%
   filter(!grepl(curr_house, House)) %>%
     plot_ly(
       data = .,
@@ -915,7 +927,8 @@ plot_coll_bar <- function(curr_house) {
     ) %>%
     layout(
       title = 'Collocation of top parties',
-      yaxis = list(tickformat = '%')
+      xaxis = list(title = FALSE),
+      yaxis = list(title = FALSE, tickformat = '%')
     ) %>%
     animation_opts(
       easing = "elastic", redraw = FALSE
@@ -925,7 +938,12 @@ plot_coll_bar <- function(curr_house) {
 coll_senate <- plot_coll_bar('Senate')
 coll_chamber <- plot_coll_bar('Chamber')
 
-subplot(coll_chamber, coll_senate, nrows = 2, shareX = TRUE)
+subplot(coll_chamber, coll_senate, nrows = 1, shareX = TRUE, shareY = TRUE) %>% 
+  layout(annotations = list(
+    list(x = 0.2 , y = 1.02, text = "Senate", showarrow = FALSE, xref='paper', yref='paper'),
+    list(x = 0.8 , y = 1.02, text = "Chamber", showarrow = FALSE, xref='paper', yref='paper'))
+    ) %>% 
+  config(displayModeBar = FALSE)
 ```
 
 ## Comparing employment rates with the shift in political views
@@ -934,16 +952,54 @@ The previous plots clearly indicate the election of 1994 as a tipping point for 
 We will now try to identify if changes in the employment rates may have, at least in part, triggered this sudden change.
 
 ```{r}
-ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
-  geom_line() + 
-  geom_point() +
+coll_circle_anim <- list_coll_filled %>%
+    filter((House == 'Chamber') & (Percent > 0) & (Year >= 1979)) %>%
+    mutate(Rank = rank(Percent)) %>%
+    ggplot(aes(x=Rank, y=Percent*100, fill=Collocation)) +
+      geom_bar(stat='identity') +
+      geom_text(
+        hjust = 1, 
+        size = 3, 
+        aes( y = 0, label = paste(
+          Collocation,' - ', round(Percent, digits=1), '%  ')
+        )
+      ) +
+      theme_minimal() +
+      scale_fill_brewer(palette = "Set2") +
+      theme(
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        legend.position='none',
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank()
+      ) +
+      coord_polar(theta = 'y') +
+      ylim(0,10000) +
+      transition_states(
+        Year,
+        transition_length = 2,
+        state_length = 1
+      )
+
+animate(coll_circle_anim, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
+anim_save("collocation_circle_over_years.gif")
+```
+
+```{r}
+employment_rate_line <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
+  geom_line()  +
+  transition_reveal(Year) +
+  ease_aes("linear") +
+  enter_fade() +  
+  exit_fade() +
   geom_point(
     data=empl_rate_it[empl_rate_it$Year==1995 | empl_rate_it$Year==2013,], 
-    aes(color='Red')
+    aes(color='Red', group=interaction(Year))
   ) +
   geom_text(
     data=empl_rate_it[empl_rate_it$Year==1995 | empl_rate_it$Year==2013,], 
-    aes(color='Red', label='Local min.'),
+    aes(color='Red', label='Local min.', group=interaction(Year)),
     hjust=-0.1, vjust=1.1, size=3
   ) +
   scale_x_discrete(limits=election_years[election_years>1976]) +
@@ -961,6 +1017,14 @@ ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = "grey", fill = NA)
   )
+
+animate(employment_rate_line, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
+anim_save("employment_rate_line.gif")
+```
+
+```{r}
+include_graphics("collocation_circle_over_years.gif")
+include_graphics("employment_rate_line.gif")
 ```
 As we might have expected, this changes in political trends line up with two local minimum values for the employment rates that we can see in the years 1995 and 2013.
 The vertical dotted lines represent (just like in the previous animated line chart) the election years in which a political shift happened in Italy.
