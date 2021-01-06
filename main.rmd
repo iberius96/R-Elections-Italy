@@ -959,46 +959,49 @@ list_coll_filled %>%
 ```
 
 ```{r}
-coll_circle_anim <- list_coll_filled %>%
-    filter((House == 'Chamber') & (Percent > 0) & (Year >= 1979)) %>%
+set2_manual_palette = c(
+          'Centre' = '#66C2A5', 
+          'Centre-Left' = '#FC8D62', 
+          'Centre-Right' = '#8DA0CB', 
+          'Far-Left' = '#E78AC3',
+          'Far-Right' = '#A6D854',
+          'Left' = '#FFD92F', 
+          'Right' = '#E5C494', 
+          'Syncretic' = '#B3B3B3'
+          )
+
+coll_cricle <- function(sel_house, sel_year) {
+    list_coll_filled %>%
+    filter((House == sel_house) & (Percent > 0) & (Year == sel_year)) %>%
     mutate(Rank = rank(Percent)) %>%
-    ggplot(aes(x=Rank, y=Percent*100, fill=Collocation)) +
+    ggplot(aes(x=Rank, y=Percent*100, fill=Collocation, alpha=0.7)) +
       geom_bar(stat='identity') +
       geom_text(
         hjust = 1, 
         size = 3, 
         aes( y = 0, label = paste(
-          Collocation,' - ', round(Percent, digits=1), '%  ')
+          Collocation, ' ')
         )
       ) +
       theme_minimal() +
-      scale_fill_brewer(palette = "Set2") +
+      scale_fill_manual(values =  set2_manual_palette) +
       theme(
         panel.grid = element_blank(),
         panel.border = element_blank(),
         legend.position='none',
         axis.text = element_blank(),
         axis.ticks = element_blank(),
-        axis.title = element_blank()
+        axis.title = element_blank(),
+        plot.margin=grid::unit(c(0,0,0,0), "cm")
       ) +
       coord_polar(theta = 'y') +
-      ylim(0,10000) +
-      transition_states(
-        Year,
-        transition_length = 0,
-        state_length = 2
-      )
-
-animate(coll_circle_anim, fps = 25, duration = 50, width = 800, height = 600, end_pause = 100, renderer=gifski_renderer('./gifs/collocation_circle_over_years.gif'))
+      ylim(0,10000)
+}
 ```
 
 ```{r}
 employment_rate_line <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
   geom_line()  +
-  transition_reveal(Year) +
-  ease_aes("linear") +
-  enter_fade() +  
-  exit_fade() +
   geom_point(
     data=empl_rate_it[empl_rate_it$Year==1995 | empl_rate_it$Year==2013,], 
     aes(color='Red', group=interaction(Year))
@@ -1008,7 +1011,9 @@ employment_rate_line <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
     aes(color='Red', label='Local min.', group=interaction(Year)),
     hjust=-0.1, vjust=1.1, size=3
   ) +
+  scale_fill_brewer(palette='Set2') +
   scale_x_discrete(limits=election_years[election_years>1976]) +
+  expand_limits(x=2025) +
   scale_y_continuous(labels=function(x) paste0(x, '%'), breaks=seq(53, 59, 1)) +
   ylab('Employment rate') +
   xlab('(Election) Year') +
@@ -1021,23 +1026,13 @@ employment_rate_line <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
     legend.position = "none",
     panel.grid.major = element_blank(), 
     panel.grid.minor = element_blank(),
-    panel.border = element_rect(colour = "grey", fill = NA)
+    panel.border = 
   )
 
-animate(employment_rate_line, fps = 25, duration = 50, width = 800, height = 600, end_pause = 100, renderer=gifski_renderer('./gifs/employment_rate_line.gif'))
-```
-
-```{r}
-circle <- image_read('./gifs/collocation_circle_over_years.gif') 
-rate <- image_read('./gifs/employment_rate_line.gif')
-
-new_gif<-image_append(c(rate[1], circle[1]))
-for(i in 2:1250){
-  combined <- image_append(c(rate[i], circle[i]))
-  new_gif<-c(new_gif,combined)
-}
-
-new_gif
+employment_rate_line +
+  annotation_custom(grob = ggplotGrob(coll_cricle('Senate', 1992)), xmin = 1949, ymin = 55, ymax = 59) +
+  annotation_custom(grob = ggplotGrob(coll_cricle('Senate', 2008)), xmin = 1987, ymin = 52.5, ymax = 56.5) +
+  annotation_custom(grob = ggplotGrob(coll_cricle('Senate', 2018)), xmin = 2012, ymin = 51.5, ymax = 55.5)
 ```
 
 As we might have expected, this changes in political trends line up with two local minimum values for the employment rates that we can see in the years 1995 and 2013.
