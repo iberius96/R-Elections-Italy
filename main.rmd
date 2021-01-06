@@ -886,11 +886,11 @@ coll_years_anim <- ggplot(
   exit_fade()
 
 animate(coll_years_anim, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
-anim_save("collocation_over_years.gif")
+anim_save("./gifs/collocation_over_years.gif")
 ```
 
 ```{r}
-include_graphics("collocation_over_years.gif")
+include_graphics("./gifs/collocation_over_years.gif")
 ```
 
 This animation reinforces what we discovered in the previous heatmap by clearly showing the two major shifts (here indicated by vertical dotted lines) that happend in the last 25 years.
@@ -982,8 +982,8 @@ coll_circle_anim <- list_coll_filled %>%
         state_length = 1
       )
 
-animate(coll_circle_anim, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
-anim_save("collocation_circle_over_years.gif")
+animate(coll_circle_anim, fps = 25, duration = 50, width = 800, height = 600, end_pause = 100)
+anim_save("./gifs/collocation_circle_over_years.gif")
 ```
 
 ```{r}
@@ -1018,14 +1018,29 @@ employment_rate_line <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
     panel.border = element_rect(colour = "grey", fill = NA)
   )
 
-animate(employment_rate_line, fps = 25, duration = 20, width = 800, height = 600, end_pause = 100)
-anim_save("employment_rate_line.gif")
+animate(employment_rate_line, fps = 25, duration = 50, width = 800, height = 600, end_pause = 100)
+anim_save("./gifs/employment_rate_line.gif")
 ```
 
 ```{r}
-include_graphics("collocation_circle_over_years.gif")
-include_graphics("employment_rate_line.gif")
+circle <- include_graphics("./gifs/collocation_circle_over_years.gif")
+rate <- include_graphics("./gifs/employment_rate_line.gif")
 ```
+
+```{r}
+circle <- image_read('./gifs/collocation_circle_over_years.gif') 
+rate <- image_read('./gifs/employment_rate_line.gif')
+```
+```{r}
+new_gif<-image_append(c(rate[1], circle[1]))
+for(i in 2:1250){
+  combined <- image_append(c(rate[i], circle[i]))
+  new_gif<-c(new_gif,combined)
+}
+
+new_gif
+```
+
 As we might have expected, this changes in political trends line up with two local minimum values for the employment rates that we can see in the years 1995 and 2013.
 The vertical dotted lines represent (just like in the previous animated line chart) the election years in which a political shift happened in Italy.
 We can assume that this downturns in the labour market may have been the source for a general lack of trust from the Italian population in the current government. 
