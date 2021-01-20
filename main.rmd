@@ -770,7 +770,9 @@ ggplot(ballot_it, aes(x=Year, y=Voter.turnout, color=House)) +
   ylab("Voter turnout") + 
   facet_grid(vars(House)) +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1)) 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "none"
+  ) 
 ```
 
 As we can see, the voter turnout has steadily dropped after 1976, going from more than 90% to less than 70% in the 2018 election.
@@ -808,16 +810,18 @@ ggplot(list_it_grouped, aes(x=Year, y=Party, fill=House)) +
   ggtitle("Total nr. of parties per election year") +
   geom_smooth(method="lm", color="black", se=FALSE, linetype="twodash", size=0.75, show.legend=FALSE, alpha=0.4) +
   geom_col(colour="black") +
-  scale_y_continuous(labels=function(x) paste0(x, "%")) +
   scale_x_continuous(breaks=election_years) +
   scale_fill_brewer(palette = "Set2") +
   ylab("Nr. of parties") +
   facet_grid(vars(House)) +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "none"
+  )
 ```
 
-This bar chart allows us to see how the total number of parties per election years has generally been increasing throughout the years. We can also see how election years like 1994 (for Chamber) and 2006/2008 (for both Houses) have a noticeably higher nr of total parties participating in the elections.
+This bar chart allows us to see how the total number of parties per election years has generally been increasing throughout the years. We can also see how election years like 1994 (for Chamber) and 2006/2013 (for both Houses) have a noticeably higher nr of total parties participating in the elections.
 
 A this point, a good idea would be to display the changes in the political spectrum for all regions across all the election years.
 A good way to display this information is by using an heatmap.
@@ -1023,14 +1027,13 @@ employment_rate_line <- ggplot(empl_rate_it, aes(x=Year, y=Empl.Rate)) +
   ggtitle("Employment rate / Political collocation (Senate)") +
   theme_bw() +
   theme(
-    axis.text.x = element_text(angle = 60, hjust = 1, size=14),
-    axis.text.y = element_text(size=14),
-    axis.title = element_text(size=14),
-    plot.title = element_text(size=14),
+    axis.text.x = element_text(angle = 60, hjust = 1, size=24),
+    axis.text.y = element_text(size=24),
+    axis.title = element_text(size=24),
+    plot.title = element_text(size=24),
     legend.position = "none",
     panel.grid.major = element_blank(), 
-    panel.grid.minor = element_blank(),
-    panel.border = 
+    panel.grid.minor = element_blank()
   )
 
 employment_rate_line +
@@ -1099,8 +1102,7 @@ server <- function(input, output, session) {
     semicricle_react() %>% ggplot(aes(x=x, y=y, colour=Party)) +
     ggtitle("Senate seats") +
     geom_parliament_seats() +
-    theme_ggparliament() +
-    scale_color_brewer(palette = "Set2") 
+    theme_ggparliament()
   })
 }
 shinyApp(ui, server)
